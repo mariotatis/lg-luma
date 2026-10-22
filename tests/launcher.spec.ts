@@ -75,6 +75,8 @@ test('full-page settings support remote navigation, Back, and persistent prefere
   await expect(settings).toBeFocused();
   for (const id of [
     'setting-home-app-names',
+    'setting-previews',
+    'setting-text-navigation',
     'setting-clock',
     'setting-motion',
     'setting-language',
@@ -336,15 +338,40 @@ async function installMockTV(
               response = {
                 returnValue: true,
                 stdoutString: JSON.stringify(
-                  payload.command.includes('listApps')
-                    ? {
-                        returnValue: true,
-                        apps,
-                      }
-                    : {
-                        returnValue: true,
-                        devices,
-                      },
+                  payload.command.includes('contentminer')
+                    ? // Shaped like webOS 10's contentminer: a title row, then content.
+                      payload.command.includes('"appId":"youtube.leanback.v4"')
+                      ? {
+                          returnValue: true,
+                          contents: [
+                            { type: 'title', titleText: '', onClick: { contentId: '' } },
+                            ...['aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({
+                              type: 'content',
+                              titleText: `Published video ${index + 1}`,
+                              category: '',
+                              image: { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` },
+                              image_4k: { url: '' },
+                              onClick: {
+                                contentId: `v=${id}&launch=launcher&shelf=1`,
+                                launchParam: null,
+                                targetAppId: 'youtube.leanback.v4',
+                              },
+                            })),
+                          ],
+                        }
+                      : {
+                          returnValue: false,
+                          errorText: 'Contents for this app are unsupported',
+                        }
+                    : payload.command.includes('listApps')
+                      ? {
+                          returnValue: true,
+                          apps,
+                        }
+                      : {
+                          returnValue: true,
+                          devices,
+                        },
                 ),
               };
           } else if (uri.includes('getAppLoadStatus'))
@@ -1053,4 +1080,163 @@ test('idle Luma rests on the ambient clock, then a city video, and any key retur
   await page.getByRole('searchbox').focus();
   await page.clock.fastForward('03:00');
   await expect(page.locator('.ambient-screen')).toHaveCount(0);
+});
+
+test('a focused favorite with highlights opens its preview shelf under a lifted greeting', async ({
+  page,
+}) => {
+  await page.route('https://i.ytimg.com/**', (route) => route.fulfill({ status: 404 }));
+  await page.goto('/');
+  const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
+  const youtube = page.locator('[data-focusable="favorite-youtube.leanback.v4"]');
+  const shelf = page.locator('.preview-shelf.is-open');
+  const hero = page.locator('.hero');
+  const focused = page.locator(':focus');
+  await expect(netflix).toBeFocused();
+  await expect(shelf).toHaveCount(0);
+  const favoritesTop = () =>
+    page.locator('.favorites-section').evaluate((node) => node.getBoundingClientRect().top);
+  const restingTop = await favoritesTop();
+
+  await page.keyboard.press('ArrowRight');
+  await expect(youtube).toBeFocused();
+  await expect(shelf).toBeVisible();
+  await expect(hero).toHaveClass(/has-shelf/);
+  // The greeting stays readable above the shelf instead of being replaced.
+  await expect(page.locator('#greeting')).toBeVisible();
+
+  // Up enters the shelf; the row's ends hold focus; Down returns to the app.
+  await page.keyboard.press('ArrowUp');
+  await expect(focused).toHaveAttribute('data-focusable', /^preview-/);
+  for (let index = 0; index < 10; index++) await page.keyboard.press('ArrowRight');
+  await expect(focused).toHaveAttribute('data-focusable', 'preview-dQw4w9WgXcQ');
+  for (let index = 0; index < 10; index++) await page.keyboard.press('ArrowLeft');
+  await expect(focused).toHaveAttribute('data-focusable', 'preview-kJQP7kiw5Fk');
+  await expect(shelf).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(youtube).toBeFocused();
+
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status')).toContainText('YouTube · ');
+
+  // Back closes the shelf, returns to the app, and keeps it closed until focus moves on.
+  await page.keyboard.press('Escape');
+  await expect(youtube).toBeFocused();
+  await expect(shelf).toHaveCount(0);
+  await expect(hero).not.toHaveClass(/has-shelf/);
+  await page.waitForTimeout(500);
+  await expect(shelf).toHaveCount(0);
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowRight');
+  await expect(shelf).toBeVisible();
+
+  // Turning previews off in Settings → Interface keeps the greeting for every app.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const previews = page.getByRole('switch', { name: 'Show app previews on Home', exact: true });
+  await expect(previews).toHaveAttribute('aria-checked', 'true');
+  await previews.click();
+  await expect(previews).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('Escape');
+  await expect(netflix).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(youtube).toBeFocused();
+  await page.waitForTimeout(500);
+  await expect(shelf).toHaveCount(0);
+  await page.reload();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(500);
+  await expect(shelf).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await previews.click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await expect(youtube).toBeFocused();
+  await expect(shelf).toBeVisible();
+
+  // Apps without highlights keep the greeting, and the favorites never move.
+  await page.keyboard.press('ArrowLeft');
+  await expect(netflix).toBeFocused();
+  await expect(shelf).toHaveCount(0);
+  expect(await favoritesTop()).toBe(restingTop);
+});
+
+test('the menu can switch from text labels to round icon buttons', async ({ page }) => {
+  await page.goto('/');
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(navigation.getByText('Apps', { exact: true })).toBeVisible();
+  await expect(navigation.locator('svg')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const labels = page.getByRole('switch', { name: 'Menu with labels', exact: true });
+  await expect(labels).toHaveAttribute('aria-checked', 'true');
+  await labels.click();
+  await expect(labels).toHaveAttribute('aria-checked', 'false');
+  await expect(navigation).toHaveClass(/is-icons/);
+  await expect(navigation.locator('svg')).toHaveCount(4);
+  await expect(navigation.getByText('Apps', { exact: true })).toHaveCount(0);
+  // The icon buttons keep their names, page state, and remote routes.
+  const settings = navigation.getByRole('button', { name: 'Settings', exact: true });
+  await expect(settings).toHaveAttribute('aria-current', 'page');
+  await settings.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(navigation.getByRole('button', { name: 'Inputs', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(navigation.getByRole('button', { name: 'Inputs', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.reload();
+  await expect(navigation).toHaveClass(/is-icons/);
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await labels.click();
+  await expect(navigation).not.toHaveClass(/is-icons/);
+  await expect(navigation.getByText('Apps', { exact: true })).toBeVisible();
+});
+
+test('on the TV, shelves show the content apps publish to webOS and open it directly', async ({
+  page,
+}) => {
+  await page.route('https://i.ytimg.com/**', (route) => route.fulfill({ status: 404 }));
+  await installMockTV(page, false, [
+    { id: 'netflix', title: 'Netflix', visible: true },
+    { id: 'youtube.leanback.v4', title: 'YouTube', visible: true },
+  ]);
+  await page.goto('/');
+  const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
+  await expect(netflix).toBeFocused();
+  // Favorites' shelves were requested in the background, without any focus.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__calls
+          .filter((call: any) => call.payload.command?.includes('contentminer'))
+          .map((call: any) => /"appId":"([^"]+)"/.exec(call.payload.command)![1]),
+      ),
+    )
+    .toEqual(['netflix', 'youtube.leanback.v4']);
+  // Netflix publishes nothing, so it keeps the greeting.
+  await page.waitForTimeout(500);
+  await expect(page.locator('.preview-shelf.is-open')).toHaveCount(0);
+
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.preview-shelf.is-open')).toBeVisible();
+  await expect(page.locator('.preview-card')).toHaveCount(2);
+  await expect(page.locator('.preview-title').first()).toHaveText('Published video 1');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__calls
+          .filter((call: any) => call.uri.endsWith('/launch'))
+          .map((call: any) => call.payload),
+      ),
+    )
+    .toEqual([
+      {
+        id: 'youtube.leanback.v4',
+        params: { contentTarget: 'v=bbbbbbbbbbb&launch=launcher&shelf=1' },
+      },
+    ]);
 });

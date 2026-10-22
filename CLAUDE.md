@@ -8,6 +8,8 @@ Project conventions, checks, and feature behavior are in @AGENTS.md. This file t
 - Work branch: `luma-home-dynamic-backgrounds`, based on upstream `8600526`.
   - `8f8e02e`: weather and city background videos (~122 MB).
   - `dc1c6fb`: dynamic backgrounds, home mode, screensaver, inventory cache, input artwork, language menu fix.
+  - Later commits: Spanish, notes.
+- Branch `youtube-preview-shelf`, stacked on `luma-home-dynamic-backgrounds`: app preview shelves on Home, the previews and menu-style settings, and two focus fixes.
 - `fork/main` is upstream v1.1.1 (17 commits ahead of our base: Settings redesign, per-input visibility in `src/inputs.ts` and `input-settings.tsx`). Merging our branch onto it is **not done yet**; expect conflicts in `settings.tsx`, `app.tsx`, `styles.css`, `settings.css`, and the tests, and our Settings rows need to move into the redesigned page.
 - The version is still `1.0.3` in `package.json` and `appinfo.json`. Bump only when asked.
 
@@ -56,9 +58,24 @@ Never unpack the IPK by hand into `/media/developer/apps`. That skips the instal
 - **Spanish:** Latin American Spanish (`es`, locale `es-419`) is a display language, listed second in the menu. Language names come from one `languageNames` map in `settings.tsx`.
 - **Language menu:** Down passes the Display language selector, OK opens it, and the ends of the menu lead out instead of wrapping.
 
+### `youtube-preview-shelf` branch
+
+- **Preview shelves** (`src/previews.ts`, `src/components/preview-shelf.tsx`): like Apple TV's top shelf. A favorite focused for 250 ms opens a row of its highlighted content under the Home greeting, which lifts and shrinks to 70% with a CSS transform (`--shelf-lift` is measured from `offsetTop` on open). Up enters the row, Left/Right follow explicit routes and hold at the ends, Down returns to the app, and Back closes the shelf and keeps it closed until focus leaves that favorite. OK opens the content.
+- **Data source on the TV:** webOS's internal `luna://com.webos.service.contentminer/getContentData {"appId":…}`, which feeds LG's home screen, read through Homebrew Channel's root exec (`readAppContent` in `bridge.ts`). Entries have `type` (`title`, then `content`), `titleText`, `image`/`image_4k` URLs, and `onClick.{contentId,targetAppId}`.
+  - On this TV, YouTube publishes about 14 personalized videos (from the account used on the TV, apparently the kid's) and LG Channels about 9 channels. Apple TV, Spotify, and others are supported but empty. Netflix, Disney+, and Prime Video return "Contents for this app are unsupported".
+  - **Deep link verified for YouTube:** `applicationManager/launch {"id":"youtube.leanback.v4","params":{"contentTarget":"<contentId>"}}` plays that video. LG Channels uses the same shape with a URL-encoded JSON `contentId`; not yet verified on the TV.
+  - Shelves are cached, refreshed after 10 minutes, and favorites are prefetched in the background once the inventory loads. The desktop preview uses sample YouTube videos; the TV never does.
+  - The packaged CSP allows images from `https://*.ytimg.com`, `http://ngfts.lge.com`, and `http(s)://aic.imagesvc.lgtvcommon.com`. Another app's shelf may need its image host added in `tools/build.mjs`.
+- **Settings → Interface → Show app previews on Home** (`showPreviews`, on by default) turns shelves off.
+- **Settings → Interface → Menu with labels** (`textNavigation`, on by default). Off turns Home/Apps/Inputs/Settings into round icon buttons (house, grid, cable, gear) lined up at the right beside the TV settings button; the current page is filled.
+- **Focus fixes:** cards take focus only on real pointer movement (a resting cursor no longer steals focus when the shelf appears), and Back from another page no longer re-focuses the first app after a quick remote press.
+
 ## Open items
 
-The TV runs `6b266ab` (Spanish and the language-menu fix), installed 2026-10-21.
+The TV runs the `youtube-preview-shelf` build (YouTube shelf with live data), installed 2026-10-21.
+
+- **Real-content alternatives for Netflix and others:** none official. Only unofficial catalogs (such as JustWatch) could provide titles and IDs; not recommended.
+- **Verify the LG Channels deep link** on the TV, and add LG Channels to favorites if its shelf should show.
 
 - **Full-restart test.** LG Input Hook's boot script `/var/lib/webosbrew/init.d/inputhook` uses `luna-send -n`, so after a full restart the Home mapping may need Input Hook to be opened once. If it fails, have `home-watch.sh` start `org.webosbrew.inputhook.service` at boot, without editing Input Hook's files.
 - **Merge onto upstream v1.1.1** (`fork/main`) in a separate branch, run all checks, and open a PR on the fork.

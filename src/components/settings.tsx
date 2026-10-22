@@ -5,6 +5,8 @@ import {
   Clock3,
   Languages,
   ChevronDown,
+  GalleryHorizontal,
+  PanelTop,
   House,
   RefreshCw,
   Type,
@@ -98,6 +100,36 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                   <strong>{t('showAppNames')}</strong>
                 </span>
                 <span className={`toggle${preferences.showHomeAppNames ? ' on' : ''}`}>
+                  <i />
+                </span>
+              </button>
+              <button
+                className="setting-row"
+                role="switch"
+                aria-checked={preferences.showPreviews}
+                data-focusable="setting-previews"
+                onClick={() => onUpdate({ showPreviews: !preferences.showPreviews })}
+              >
+                <GalleryHorizontal />
+                <span>
+                  <strong>{t('showPreviews')}</strong>
+                </span>
+                <span className={`toggle${preferences.showPreviews ? ' on' : ''}`}>
+                  <i />
+                </span>
+              </button>
+              <button
+                className="setting-row"
+                role="switch"
+                aria-checked={preferences.textNavigation}
+                data-focusable="setting-text-navigation"
+                onClick={() => onUpdate({ textNavigation: !preferences.textNavigation })}
+              >
+                <PanelTop />
+                <span>
+                  <strong>{t('textNavigation')}</strong>
+                </span>
+                <span className={`toggle${preferences.textNavigation ? ' on' : ''}`}>
                   <i />
                 </span>
               </button>

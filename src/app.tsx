@@ -30,8 +30,11 @@ import { wallpapers } from './wallpapers';
 const IDLE_CLOCK_MS = 2 * 60 * 1000;
 const CLOCK_VIDEO_MS = 5 * 60 * 1000;
 const IDLE_CHECK_MS = 5000;
+const SHELF_DELAY_MS = 250;
 const screensaverVideos = wallpapers.flatMap((wallpaper) => wallpaper.video ?? []);
 import { BackgroundVideo } from './components/background-video';
+import { PreviewShelf, prefetchPreviews, usePreviewItems } from './components/preview-shelf';
+import type { PreviewItem } from './previews';
 import { readInventoryCache, saveInventoryCache } from './inventory-cache';
 import { WeatherBackground } from './components/weather-background';
 import { moveFavorite } from './favorites';
@@ -44,6 +47,10 @@ const focusFirstApp = () =>
     document.querySelector<HTMLElement>('main [data-app-id]') ??
     document.querySelector<HTMLElement>('main [data-focusable]')
   )?.focus({ preventScroll: true });
+// A deferred focus must not undo a remote press that already moved focus on the new page.
+const focusFirstAppIfIdle = () => {
+  if (!document.querySelector('main')?.contains(document.activeElement)) focusFirstApp();
+};
 
 export function App() {
   const [preferences, setPreferences] = useState(loadPreferences);
@@ -74,6 +81,8 @@ function Launcher({
   const [category, setCategory] = useState<Category | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [ambient, setAmbient] = useState(false);
+  // The favorite whose preview shelf replaces the Home greeting.
+  const [shelfAppId, setShelfAppId] = useState<string | null>(null);
   // The city video the screensaver moved on to after the ambient clock, if any.
   const [screensaver, setScreensaver] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
@@ -197,6 +206,58 @@ function Launcher({
     if ((!loading || hasApps) && document.activeElement === document.body) focusFirstApp();
   }, [loading, hasApps, page]);
 
+  // A focused favorite shows its shelf after a short pause, so sweeping across the row
+  // does not flicker; focus inside the shelf keeps it, anywhere else restores the greeting.
+  // Back closes it, and it stays closed until focus leaves that favorite.
+  const dismissedShelf = useRef<string | null>(null);
+  useEffect(() => {
+    if (page !== 'home') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const follow = (event: FocusEvent) => {
+      const node = event.target as HTMLElement | null;
+      const key = node?.dataset?.focusable ?? '';
+      if (key.startsWith('preview-')) return;
+      clearTimeout(timer);
+      const id = key.startsWith('favorite-') ? (node?.dataset.appId ?? null) : null;
+      if (id !== dismissedShelf.current) dismissedShelf.current = null;
+      if (id && !dismissedShelf.current)
+        timer = setTimeout(() => setShelfAppId(id), SHELF_DELAY_MS);
+      else setShelfAppId(null);
+    };
+    document.addEventListener('focusin', follow);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('focusin', follow);
+    };
+  }, [page]);
+  const shelfApp =
+    preferences.showPreviews && shelfAppId && !reordering ? appMap.get(shelfAppId) : undefined;
+  // On the TV, favorites' shelves load in the background once the inventory is in.
+  useEffect(() => {
+    if (isTV() && preferences.showPreviews && !loading && favorites.length)
+      void prefetchPreviews(favorites);
+  }, [preferences.showPreviews, loading, favorites]);
+  const shelfItems = usePreviewItems(shelfApp);
+  const shelfOpen = page === 'home' && shelfItems.length > 0;
+  const closeShelf = useCallback(() => {
+    if (!shelfAppId) return;
+    dismissedShelf.current = shelfAppId;
+    setShelfAppId(null);
+    if ((document.activeElement as HTMLElement | null)?.dataset.focusable?.startsWith('preview-'))
+      document
+        .querySelector<HTMLElement>(`[data-focusable="favorite-${CSS.escape(shelfAppId)}"]`)
+        ?.focus({ preventScroll: true });
+  }, [shelfAppId]);
+  // How far the greeting rises to sit above the open shelf; offsetTop ignores the transform,
+  // so reopening mid-animation still measures the resting position.
+  const hero = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const copy = hero.current?.querySelector<HTMLElement>('.hero-copy');
+    if (!shelfOpen || !copy || !hero.current) return;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    hero.current.style.setProperty('--shelf-lift', `${0.4 * rem - copy.offsetTop}px`);
+  }, [shelfOpen]);
+
   const leaveAmbient = useCallback(() => {
     setAmbient(false);
     setScreensaver(null);
@@ -259,16 +320,18 @@ function Launcher({
   }, []);
 
   const onLaunch = useCallback(
-    async (app: TVApp | TVInput) => {
+    async (app: TVApp | TVInput, content?: PreviewItem) => {
       if (pendingLaunch.current || reordering) return;
       if (!isTV()) {
-        notify(t('desktopPreview', { app: app.title }));
+        notify(
+          t('desktopPreview', { app: content ? `${app.title} · ${content.title}` : app.title }),
+        );
         return;
       }
       pendingLaunch.current = true;
       setLaunching(app.id);
       try {
-        await launchApp(app.id);
+        await launchApp(content?.appId ?? app.id, content?.launch);
         if (!('port' in app))
           setPreferences((current) => ({
             ...current,
@@ -333,13 +396,17 @@ function Launcher({
           setOptionsApp(null);
           return;
         }
+        if (shelfOpen) {
+          closeShelf();
+          return;
+        }
         if (query) {
           setQuery('');
           return;
         }
         if (page !== 'home') {
           openPage('home');
-          requestAnimationFrame(focusFirstApp);
+          requestAnimationFrame(focusFirstAppIfIdle);
           return;
         }
         // As the TV's home screen, Back rests on the ambient clock instead of leaving.
@@ -490,6 +557,28 @@ function Launcher({
     <BackgroundVideo key={wallpaper.video} src={wallpaper.video} paused={reducedMotion} />
   ) : null;
 
+  const heroCopy = (
+    <div className="hero-copy">
+      <Greeting language={language} />
+      {preferences.showWeather ? (
+        <Weather
+          location={preferences.weatherLocation}
+          unit={preferences.temperatureUnit}
+          onConfigure={() => {
+            openPage('settings');
+            requestAnimationFrame(() => {
+              const field = document.querySelector<HTMLElement>(
+                '[data-focusable="weather-location-query"]',
+              );
+              field?.focus({ preventScroll: true });
+              field?.scrollIntoView({ block: 'nearest' });
+            });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+
   return (
     <div
       className={`luma${reducedMotion ? ' reduce-motion' : ''}${ambient ? ' is-ambient' : ''}${screensaver ? ' is-screensaver' : ''}`}
@@ -542,7 +631,7 @@ function Launcher({
             }
           >
             <Clock clock24={preferences.clock24} language={language} />
-            <Navigation page={page} onChange={openPage} />
+            <Navigation page={page} labels={preferences.textNavigation} onChange={openPage} />
             <div className="header-right">
               <button
                 className="icon-button settings-button"
@@ -565,26 +654,18 @@ function Launcher({
           <main className={`main page-${page}`}>
             {page === 'home' ? (
               <>
-                <section className="hero" aria-labelledby="greeting">
-                  <div className="hero-copy">
-                    <Greeting language={language} />
-                    {preferences.showWeather ? (
-                      <Weather
-                        location={preferences.weatherLocation}
-                        unit={preferences.temperatureUnit}
-                        onConfigure={() => {
-                          openPage('settings');
-                          requestAnimationFrame(() => {
-                            const field = document.querySelector<HTMLElement>(
-                              '[data-focusable="weather-location-query"]',
-                            );
-                            field?.focus({ preventScroll: true });
-                            field?.scrollIntoView({ block: 'nearest' });
-                          });
-                        }}
-                      />
-                    ) : null}
-                  </div>
+                <section
+                  ref={hero}
+                  className={`hero${shelfOpen ? ' has-shelf' : ''}`}
+                  aria-labelledby="greeting"
+                >
+                  {heroCopy}
+                  <PreviewShelf
+                    app={shelfApp}
+                    items={shelfItems}
+                    open={shelfOpen}
+                    onOpen={(app, item) => void onLaunch(app, item)}
+                  />
                 </section>
                 <section className="favorites-section" aria-labelledby="favorites-heading">
                   <div className="section-heading">

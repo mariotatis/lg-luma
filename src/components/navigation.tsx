@@ -1,19 +1,24 @@
 import { memo, useCallback, useLayoutEffect, useRef } from 'react';
+import { Cable, House, LayoutGrid, Settings, type LucideIcon } from 'lucide-react';
 import type { Page } from '../types';
 import { useTranslation } from '../i18n';
 
-const tabs: { id: Page; label: 'home' | 'apps' | 'inputs' | 'settings' }[] = [
-  { id: 'home', label: 'home' },
-  { id: 'apps', label: 'apps' },
-  { id: 'inputs', label: 'inputs' },
-  { id: 'settings', label: 'settings' },
+const tabs: { id: Page; label: 'home' | 'apps' | 'inputs' | 'settings'; icon: LucideIcon }[] = [
+  { id: 'home', label: 'home', icon: House },
+  { id: 'apps', label: 'apps', icon: LayoutGrid },
+  { id: 'inputs', label: 'inputs', icon: Cable },
+  { id: 'settings', label: 'settings', icon: Settings },
 ];
 
+// `labels` shows the text pill; without it each page is a round icon button, like the
+// TV settings button, and the selected one is filled instead of using the moving pill.
 export const Navigation = memo(function Navigation({
   page,
+  labels,
   onChange,
 }: {
   page: Page;
+  labels: boolean;
   onChange: (page: Page) => void;
 }) {
   const { t } = useTranslation();
@@ -35,7 +40,7 @@ export const Navigation = memo(function Navigation({
   useLayoutEffect(() => {
     positionIndicator(positioned.current);
     positioned.current = true;
-  }, [page, positionIndicator]);
+  }, [page, labels, positionIndicator]);
 
   useLayoutEffect(() => {
     const element = navigation.current;
@@ -45,20 +50,26 @@ export const Navigation = memo(function Navigation({
     observer.observe(element);
     element.querySelectorAll('button').forEach((tab) => observer.observe(tab));
     return () => observer.disconnect();
-  }, [positionIndicator]);
+  }, [labels, positionIndicator]);
 
   return (
-    <nav ref={navigation} className="navigation" aria-label={t('mainNavigation')}>
-      <span ref={indicator} className="nav-indicator" aria-hidden="true" />
+    <nav
+      ref={navigation}
+      className={`navigation${labels ? '' : ' is-icons'}`}
+      aria-label={t('mainNavigation')}
+    >
+      {labels ? <span ref={indicator} className="nav-indicator" aria-hidden="true" /> : null}
       {tabs.map((tab) => (
         <button
           key={tab.id}
           className={`nav-item${page === tab.id ? ' active' : ''}`}
           data-focusable={`nav-${tab.id}`}
           aria-current={page === tab.id ? 'page' : undefined}
+          aria-label={labels ? undefined : t(tab.label)}
+          title={labels ? undefined : t(tab.label)}
           onClick={() => onChange(tab.id)}
         >
-          <span>{t(tab.label)}</span>
+          {labels ? <span>{t(tab.label)}</span> : <tab.icon strokeWidth={1.8} aria-hidden="true" />}
         </button>
       ))}
     </nav>

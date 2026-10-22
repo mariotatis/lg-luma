@@ -40,6 +40,8 @@ export interface Preferences {
   reducedMotion: boolean;
   clock24: boolean;
   showHomeAppNames: boolean;
+  showPreviews: boolean;
+  textNavigation: boolean;
   showWeather: boolean;
   dynamicBackground: boolean;
   useAsHome: boolean;

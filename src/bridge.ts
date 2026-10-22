@@ -81,10 +81,14 @@ export function nativeCall(
   });
 }
 
-async function inventoryRead(uri: string, field: string): Promise<unknown> {
+async function inventoryRead(
+  uri: string,
+  field: string,
+  payload: Record<string, string> = {},
+): Promise<unknown> {
   // Read private inventory APIs through the existing elevated Homebrew service.
   // No credentials or environment reads.
-  const command = `if [ "$(id -u)" = "0" ]; then /usr/bin/luna-send -n 1 -w 4000 ${uri} '{}'; else printf '%s\\n' '{"returnValue":false,"errorText":"Homebrew Channel needs root access."}'; fi`;
+  const command = `if [ "$(id -u)" = "0" ]; then /usr/bin/luna-send -n 1 -w 4000 ${uri} '${JSON.stringify(payload)}'; else printf '%s\\n' '{"returnValue":false,"errorText":"Homebrew Channel needs root access."}'; fi`;
   const envelope = await nativeCall('luna://org.webosbrew.hbchannel.service/exec', { command });
   if (
     [envelope.returnCode, envelope.exitCode].some(
@@ -127,14 +131,27 @@ export async function loadInventory(): Promise<Inventory> {
   };
 }
 
-export async function launchApp(id: string): Promise<void> {
+// `content` opens the app at a specific title through its webOS launch parameters.
+// The highlighted content an app publishes for LG's home screen (YouTube, LG Channels…).
+// Apps that publish nothing are rejected with "Contents for this app are unsupported".
+export async function readAppContent(appId: string): Promise<unknown> {
+  if (!validAppId(appId)) throw new Error('This app has an invalid identifier.');
+  return inventoryRead('luna://com.webos.service.contentminer/getContentData', 'contents', {
+    appId,
+  });
+}
+
+export async function launchApp(
+  id: string,
+  content?: { contentId?: string; params?: Record<string, string> },
+): Promise<void> {
   if (!validAppId(id)) throw new Error('This app has an invalid identifier.');
   if (!isTV()) return;
   const status = await nativeCall(`${manager}getAppLoadStatus`, { appId: id });
   if (status.exist !== true)
     throw new Error('This app is no longer installed. Refresh your library.');
   // Public API + declared ACGs, rather than rewriting any system permissions.
-  await nativeCall(`${manager}launch`, { id });
+  await nativeCall(`${manager}launch`, { id, ...content });
 }
 
 const HOME_WATCH = '/media/developer/apps/usr/palm/applications/com.luma.launcher/home-watch.sh';
