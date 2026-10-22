@@ -97,6 +97,7 @@ test('weather requests use the chosen coordinates and validate the current readi
 
 test('weather conditions handle night, fog, snow, showers and thunderstorms', () => {
   assert.deepEqual(weatherCondition(0, false), { label: 'Clear night', icon: 'moon' });
+  assert.deepEqual(weatherCondition(61, true, 'es'), { label: 'Lluvia', icon: 'rain' });
   assert.equal(weatherCondition(48, true).icon, 'fog');
   assert.equal(weatherCondition(85, true).icon, 'snow');
   assert.equal(weatherCondition(82, true).icon, 'rain');

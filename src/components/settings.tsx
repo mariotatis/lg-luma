@@ -14,9 +14,13 @@ import type { Language, Preferences } from '../types';
 import { useRef, useState } from 'react';
 import { wallpapers, wallpaperThumbnail } from '../wallpapers';
 
+// Each language is named in its own script, whatever the current display language.
+const languageNames = { en: 'english', es: 'spanish', de: 'german', zh: 'chinese' } as const;
+const languageOptions = Object.entries(languageNames) as [Language, MessageKey][];
+
 const photoWallpapers = wallpapers.filter((wallpaper) => !wallpaper.video);
 const videoWallpapers = wallpapers.filter((wallpaper) => wallpaper.video);
-import { useTranslation, wallpaperLabel } from '../i18n';
+import { useTranslation, wallpaperLabel, type MessageKey } from '../i18n';
 
 interface Props {
   preferences: Preferences;
@@ -142,7 +146,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                   data-focus-down="setting-refresh"
                   aria-haspopup="listbox"
                   aria-expanded={languageMenuOpen}
-                  aria-label={`${t('languageMenu')}: ${t(preferences.language === 'en' ? 'english' : preferences.language === 'de' ? 'german' : 'chinese')}`}
+                  aria-label={`${t('languageMenu')}: ${t(languageNames[preferences.language])}`}
                   onKeyDown={(event) => {
                     // Down moves on to the next row like every other setting; OK opens the menu.
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -164,15 +168,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                       setLanguageMenuOpen(false);
                   }}
                 >
-                  <span>
-                    {t(
-                      preferences.language === 'en'
-                        ? 'english'
-                        : preferences.language === 'de'
-                          ? 'german'
-                          : 'chinese',
-                    )}
-                  </span>
+                  <span>{t(languageNames[preferences.language])}</span>
                   <ChevronDown size={18} aria-hidden="true" />
                 </button>
               </div>
@@ -199,13 +195,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                       setLanguageMenuOpen(false);
                   }}
                 >
-                  {(
-                    [
-                      ['en', 'english'],
-                      ['de', 'german'],
-                      ['zh', 'chinese'],
-                    ] as const
-                  ).map(([option, label], index, options) => (
+                  {languageOptions.map(([option, label], index, options) => (
                     <button
                       key={option}
                       type="button"

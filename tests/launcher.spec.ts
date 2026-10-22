@@ -117,6 +117,8 @@ test('display language menu supports vertical remote navigation and persists', a
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
   await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-es"]')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await expect(page.locator('[data-focusable="language-option-de"]')).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE');
@@ -136,6 +138,26 @@ test('display language menu supports vertical remote navigation and persists', a
   await expect(page.getByRole('region', { name: 'Luma 设置', exact: true })).toBeVisible();
 });
 
+test('Spanish can be chosen and translates the interface', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('[data-focusable="setting-language"]').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-es"]')).toHaveText('Español');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'es-419');
+  await expect(page.getByRole('button', { name: 'Inicio', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Configuración de Luma', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Idioma: Español' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: /Usar Luma como inicio/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Inicio', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Favoritos', exact: true })).toBeVisible();
+});
+
 test('the language menu ends lead out of it and leaving sideways closes it', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -150,7 +172,7 @@ test('the language menu ends lead out of it and leaving sideways closes it', asy
 
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
-  for (const option of ['de', 'zh']) {
+  for (const option of ['es', 'de', 'zh']) {
     await page.keyboard.press('ArrowDown');
     await expect(page.locator(`[data-focusable="language-option-${option}"]`)).toBeFocused();
   }

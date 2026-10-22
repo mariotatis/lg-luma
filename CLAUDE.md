@@ -53,6 +53,7 @@ Never unpack the IPK by hand into `/media/developer/apps`. That skips the instal
 - **Screensaver:** after 2 idle minutes, the ambient clock; after 5 more, a random city video with a corner clock.
 - **Performance:** the last TV inventory is cached (`luma.inventory.v1`), background videos start 1.2 s after load and pause while hidden, and the watcher closes LG Channels in the background.
 - **Input artwork:** also uses HDMI-CEC `subList[].cecpDevType`/`osdName` and `spdVendorName`/`spdProductDescription`.
+- **Spanish:** Latin American Spanish (`es`, locale `es-419`) is a display language, listed second in the menu. Language names come from one `languageNames` map in `settings.tsx`.
 - **Language menu:** Down passes the Display language selector, OK opens it, and the ends of the menu lead out instead of wrapping.
 
 ## Open items

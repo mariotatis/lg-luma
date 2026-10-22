@@ -14,7 +14,7 @@ export type Wallpaper =
   | 'sfo';
 export type Category = 'Streaming' | 'Music' | 'Gaming' | 'Utilities';
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
-export type Language = 'en' | 'de' | 'zh';
+export type Language = 'en' | 'es' | 'de' | 'zh';
 
 export interface TVApp {
   id: string;

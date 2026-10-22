@@ -50,7 +50,7 @@ export function parsePreferences(raw: string | null): Preferences {
       dynamicBackground: value.dynamicBackground === true,
       useAsHome: value.useAsHome === true,
       temperatureUnit: value.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius',
-      language: value.language === 'de' || value.language === 'zh' ? value.language : 'en',
+      language: ['es', 'de', 'zh'].includes(value.language) ? value.language : 'en',
       weatherLocation: parseLocation(value.weatherLocation),
     };
   } catch {
