@@ -82,6 +82,41 @@ export function normalizeApps(raw: unknown): TVApp[] {
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
+// CEC logical device types reported in an input's SIMPLINK sub-list.
+const CEC_PLAYBACK = 4;
+const CEC_AUDIO = 5;
+const CEC_TUNER = 3;
+const CEC_RECORDER = 1;
+
+// Picks the card artwork from the name, then what the device reports about itself
+// over HDMI-CEC and its source description; a named but unknown device still gets
+// device artwork, and only an unnamed port shows the HDMI connector.
+function inputKind(entry: any, title: string, port: string): TVInput['kind'] {
+  const cec: unknown[] = Array.isArray(entry?.subList) ? entry.subList.slice(0, 8) : [];
+  const described = [
+    title,
+    ...cec.map((device: any) => (typeof device?.osdName === 'string' ? device.osdName : '')),
+    typeof entry?.spdVendorName === 'string' ? entry.spdVendorName : '',
+    typeof entry?.spdProductDescription === 'string' ? entry.spdProductDescription : '',
+  ]
+    .join(' ')
+    .slice(0, 400);
+  if (/playstation|xbox|nintendo|switch|console/i.test(described)) return 'console';
+  if (
+    /apple|stream|fire|roku|android|google|chromecast|shield|nvidia|mi ?box|xiaomi|amlogic|tivo|\bonn\b/i.test(
+      described,
+    )
+  )
+    return 'streamer';
+  if (/pc|computer|laptop/i.test(described)) return 'computer';
+  if (/sound|speaker|receiver|sonos|denon|yamaha|bose/i.test(described)) return 'audio';
+  const types = cec.map((device: any) => device?.cecpDevType);
+  if (types.includes(CEC_AUDIO)) return 'audio';
+  if (types.some((type) => [CEC_PLAYBACK, CEC_TUNER, CEC_RECORDER].includes(type)))
+    return 'streamer';
+  return title !== port ? 'device' : 'hdmi';
+}
+
 export function normalizeInputs(raw: unknown): TVInput[] {
   if (!Array.isArray(raw) || raw.length > 128)
     throw new Error('The TV returned an invalid input list.');
@@ -102,13 +137,7 @@ export function normalizeInputs(raw: unknown): TVInput[] {
             .trim()
             .slice(0, 120)
         : port;
-    const kind = /playstation|xbox|switch|console/i.test(title)
-      ? 'console'
-      : /apple|stream|fire|roku/i.test(title)
-        ? 'streamer'
-        : /pc|computer|laptop/i.test(title)
-          ? 'computer'
-          : 'hdmi';
+    const kind = inputKind(entry, title, port);
     return [
       {
         id: entry.appId,

@@ -22,10 +22,18 @@ import { Weather } from './components/weather';
 import { AmbientClock, Clock, Greeting } from './components/clock';
 import { Navigation } from './components/navigation';
 import { defaultFavorites, sortApps } from './catalog';
-import { isTV, launchApp, loadInventory, platformBack } from './bridge';
+import { isTV, launchApp, loadInventory, platformBack, setHomeMode } from './bridge';
 import { moveFocus, type Direction } from './navigation';
 import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
+
+const IDLE_CLOCK_MS = 2 * 60 * 1000;
+const CLOCK_VIDEO_MS = 5 * 60 * 1000;
+const IDLE_CHECK_MS = 5000;
+const screensaverVideos = wallpapers.flatMap((wallpaper) => wallpaper.video ?? []);
+import { BackgroundVideo } from './components/background-video';
+import { readInventoryCache, saveInventoryCache } from './inventory-cache';
+import { WeatherBackground } from './components/weather-background';
 import { moveFavorite } from './favorites';
 import type { Category, Inventory, Page, Preferences, TVApp, TVInput } from './types';
 import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
@@ -55,11 +63,9 @@ function Launcher({
 }) {
   const { t, language } = useTranslation();
   const [page, setPage] = useState<Page>('home');
-  const [inventory, setInventory] = useState<Inventory>({
-    apps: [],
-    inputs: [],
-    warnings: [],
-  });
+  const [inventory, setInventory] = useState<Inventory>(
+    () => (isTV() && readInventoryCache()) || { apps: [], inputs: [], warnings: [] },
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [optionsApp, setOptionsApp] = useState<TVApp | null>(null);
@@ -68,6 +74,8 @@ function Launcher({
   const [category, setCategory] = useState<Category | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [ambient, setAmbient] = useState(false);
+  // The city video the screensaver moved on to after the ambient clock, if any.
+  const [screensaver, setScreensaver] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const pendingLaunch = useRef(false);
@@ -136,6 +144,8 @@ function Launcher({
           ...next,
           inputs: next.warnings.length ? current.inputs : next.inputs,
         }));
+      if (version === reloadVersion.current && isTV() && !next.warnings.length)
+        saveInventoryCache(next);
     } catch (error) {
       if (version === reloadVersion.current)
         setError(error instanceof Error ? error.message : t('tvUnreachable'));
@@ -155,6 +165,17 @@ function Launcher({
       notify(t('savedError'), true);
     }
   }, [preferences, notify, t]);
+  // Start the TV watcher at launch when home mode is on, and follow later changes.
+  const homeMode = useRef<boolean | null>(null);
+  useEffect(() => {
+    const enabled = preferences.useAsHome;
+    if (homeMode.current === enabled || (homeMode.current === null && !enabled)) {
+      homeMode.current = enabled;
+      return;
+    }
+    homeMode.current = enabled;
+    setHomeMode(enabled).catch(() => notify(t('homeModeFailed'), true));
+  }, [preferences.useAsHome, notify, t]);
   useEffect(() => {
     const resume = () => {
       if (!document.hidden) {
@@ -170,9 +191,46 @@ function Launcher({
     };
   }, [refresh]);
 
+  // Saved apps are ready to use before the live inventory arrives.
+  const hasApps = inventory.apps.length > 0;
   useLayoutEffect(() => {
-    if (!loading && document.activeElement === document.body) focusFirstApp();
-  }, [loading, page]);
+    if ((!loading || hasApps) && document.activeElement === document.body) focusFirstApp();
+  }, [loading, hasApps, page]);
+
+  const leaveAmbient = useCallback(() => {
+    setAmbient(false);
+    setScreensaver(null);
+  }, []);
+  // Idle Luma rests on the ambient clock, then moves on to a city video. Time spent
+  // in other apps or typing in a field never counts as idle.
+  useEffect(() => {
+    if (screensaver) return;
+    const since = Date.now();
+    let last = since;
+    const activity = () => {
+      last = Date.now();
+    };
+    const events = ['keydown', 'pointermove', 'pointerdown', 'wheel'] as const;
+    for (const event of events)
+      window.addEventListener(event, activity, { capture: true, passive: true });
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (document.hidden || document.activeElement instanceof HTMLInputElement) {
+        last = now;
+        return;
+      }
+      if (!ambient && now - last >= IDLE_CLOCK_MS) {
+        setReordering(null);
+        setAmbient(true);
+      } else if (ambient && now - Math.max(since, last) >= CLOCK_VIDEO_MS) {
+        setScreensaver(screensaverVideos[Math.floor(Math.random() * screensaverVideos.length)]);
+      }
+    }, IDLE_CHECK_MS);
+    return () => {
+      clearInterval(timer);
+      for (const event of events) window.removeEventListener(event, activity, { capture: true });
+    };
+  }, [ambient, screensaver]);
 
   useLayoutEffect(() => {
     if (wasAmbient.current && !ambient) focusFirstApp();
@@ -264,7 +322,7 @@ function Launcher({
     actions.current = {
       back: () => {
         if (ambient) {
-          setAmbient(false);
+          leaveAmbient();
           return;
         }
         if (reordering) {
@@ -284,7 +342,9 @@ function Launcher({
           requestAnimationFrame(focusFirstApp);
           return;
         }
-        platformBack();
+        // As the TV's home screen, Back rests on the ambient clock instead of leaving.
+        if (preferences.useAsHome) setAmbient(true);
+        else platformBack();
       },
       options: () => {
         const id = (document.activeElement as HTMLElement | null)?.dataset.appId;
@@ -306,7 +366,7 @@ function Launcher({
       },
       wake: () => {
         if (!ambient) return false;
-        setAmbient(false);
+        leaveAmbient();
         return true;
       },
     };
@@ -426,21 +486,37 @@ function Launcher({
     />
   );
   const wallpaper = wallpapers.find((item) => item.id === preferences.wallpaper) ?? wallpapers[0];
+  const wallpaperVideo = wallpaper.video ? (
+    <BackgroundVideo key={wallpaper.video} src={wallpaper.video} paused={reducedMotion} />
+  ) : null;
 
   return (
-    <div className={`luma${reducedMotion ? ' reduce-motion' : ''}${ambient ? ' is-ambient' : ''}`}>
+    <div
+      className={`luma${reducedMotion ? ' reduce-motion' : ''}${ambient ? ' is-ambient' : ''}${screensaver ? ' is-screensaver' : ''}`}
+    >
       <div className="landscape-fallback" />
       <div
         className={`wallpaper wallpaper-${preferences.wallpaper}`}
         style={{ backgroundImage: `url('./wallpapers/${wallpaper.image}')` }}
       />
+      {screensaver ? (
+        <BackgroundVideo key={screensaver} src={screensaver} paused={reducedMotion} />
+      ) : preferences.dynamicBackground && preferences.weatherLocation ? (
+        <WeatherBackground
+          location={preferences.weatherLocation}
+          paused={reducedMotion}
+          fallback={wallpaperVideo}
+        />
+      ) : (
+        wallpaperVideo
+      )}
       <div className="wallpaper-shade" />
       {ambient ? (
         <button
           className="ambient-screen"
           aria-label={t('returnLuma')}
-          onClick={() => setAmbient(false)}
-          onPointerMove={() => setAmbient(false)}
+          onClick={leaveAmbient}
+          onPointerMove={leaveAmbient}
         >
           <AmbientClock clock24={preferences.clock24} language={language} />
           <span className="ambient-hint">

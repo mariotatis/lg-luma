@@ -9,6 +9,24 @@ import {
   type CachedWeather,
 } from './weather';
 
+// Home, ambient, Settings, and the dynamic background can all ask at once; they share one request.
+const pending = new Map<string, Promise<CachedWeather>>();
+
+function requestWeather(location: WeatherLocation, key: string): Promise<CachedWeather> {
+  let request = pending.get(key);
+  if (!request) {
+    request = fetchWeather(location)
+      .then((reading) => {
+        const cache = { key, updatedAt: Date.now(), reading };
+        saveWeatherCache(cache);
+        return cache;
+      })
+      .finally(() => pending.delete(key));
+    pending.set(key, request);
+  }
+  return request;
+}
+
 interface WeatherState {
   cache: CachedWeather | null;
   key: string;
@@ -22,7 +40,8 @@ export function useWeather(location: WeatherLocation | null) {
     const key = locationKey(location);
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let controller: AbortController | undefined;
+    // Results from a superseded refresh are ignored.
+    let generation = 0;
     const schedule = (delay: number) => {
       clearTimeout(timer);
       if (!disposed && !document.hidden) timer = setTimeout(() => void refresh(), delay);
@@ -30,7 +49,7 @@ export function useWeather(location: WeatherLocation | null) {
     const refresh = async () => {
       if (disposed || document.hidden) return;
       clearTimeout(timer);
-      controller?.abort();
+      const current = ++generation;
       const cached = readWeatherCache(location);
       const age = cached ? Date.now() - cached.updatedAt : Infinity;
       if (cached && age < WEATHER_REFRESH_MS) {
@@ -38,24 +57,20 @@ export function useWeather(location: WeatherLocation | null) {
         schedule(WEATHER_REFRESH_MS - age);
         return;
       }
-      const request = new AbortController();
-      controller = request;
       try {
-        const reading = await fetchWeather(location, request.signal);
-        if (disposed || request.signal.aborted) return;
-        const cache = { key, updatedAt: Date.now(), reading };
-        saveWeatherCache(cache);
+        const cache = await requestWeather(location, key);
+        if (disposed || current !== generation) return;
         setState({ key, cache, failed: false });
         schedule(WEATHER_REFRESH_MS);
       } catch {
-        if (disposed || request.signal.aborted) return;
+        if (disposed || current !== generation) return;
         setState({ key, cache: cached, failed: true });
         schedule(5 * 60 * 1000);
       }
     };
     const visibility = () => {
       clearTimeout(timer);
-      if (document.hidden) controller?.abort();
+      if (document.hidden) generation++;
       else void refresh();
     };
     // oxlint-disable-next-line react/set-state-in-effect -- Synchronize the external weather cache and API when the selected city changes.
@@ -65,7 +80,6 @@ export function useWeather(location: WeatherLocation | null) {
     return () => {
       disposed = true;
       clearTimeout(timer);
-      controller?.abort();
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('online', visibility);
     };

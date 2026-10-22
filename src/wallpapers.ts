@@ -7,6 +7,8 @@ export const wallpapers: {
   id: Wallpaper;
   title: string;
   image: string;
+  // Looping video backgrounds; `image` is their first frame.
+  video?: string;
 }[] = [
   {
     id: 'slate',
@@ -52,5 +54,23 @@ export const wallpapers: {
     id: 'northern-lights',
     title: 'Northern lights',
     image: 'northern-lights.jpg',
+  },
+  {
+    id: 'china',
+    title: 'Great Wall',
+    image: 'china.jpg',
+    video: './weather-videos/other/china.mp4',
+  },
+  {
+    id: 'la',
+    title: 'Los Angeles',
+    image: 'la.jpg',
+    video: './weather-videos/other/la.mp4',
+  },
+  {
+    id: 'sfo',
+    title: 'San Francisco Bay',
+    image: 'sfo.jpg',
+    video: './weather-videos/other/sfo.mp4',
   },
 ];

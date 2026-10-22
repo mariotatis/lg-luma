@@ -1,4 +1,4 @@
-import { Gamepad2, HdmiPort, Monitor, Tv, Usb } from 'lucide-react';
+import { Box, Gamepad2, HdmiPort, Monitor, Speaker, Tv, Usb } from 'lucide-react';
 import type { TVInput } from '../types';
 
 export function ConnectionIcon({ input }: { input: TVInput }) {
@@ -35,5 +35,9 @@ export function ConnectionIcon({ input }: { input: TVInput }) {
     return <Monitor strokeWidth={1.5} aria-hidden="true" data-connection-icon="computer" />;
   if (input.kind === 'streamer')
     return <Tv strokeWidth={1.5} aria-hidden="true" data-connection-icon="streamer" />;
+  if (input.kind === 'audio')
+    return <Speaker strokeWidth={1.5} aria-hidden="true" data-connection-icon="audio" />;
+  if (input.kind === 'device')
+    return <Box strokeWidth={1.5} aria-hidden="true" data-connection-icon="device" />;
   return <HdmiPort strokeWidth={1.5} aria-hidden="true" data-connection-icon="hdmi" />;
 }

@@ -11,7 +11,9 @@ await fs.rm(output, { recursive: true, force: true });
 await fs.mkdir(output, { recursive: true });
 await fs.cp(path.join(root, 'public'), output, {
   recursive: true,
-  filter: (source) => path.basename(source) !== '.DS_Store',
+  filter: (source) =>
+    path.basename(source) !== '.DS_Store' &&
+    path.relative(root, source) !== path.join('public', 'weather-videos', 'README.md'),
 });
 // Classic IIFE + relative local assets: no module fetches or file:// CORS issues.
 await build({
@@ -35,8 +37,10 @@ const manifest = JSON.parse(await fs.readFile(path.join(root, 'appinfo.json'), '
 await fs.writeFile(path.join(output, 'appinfo.json'), JSON.stringify(manifest, null, 2) + '\n');
 await fs.copyFile(path.join(root, 'license'), path.join(output, 'license'));
 await fs.copyFile(path.join(root, 'assets.md'), path.join(output, 'assets.md'));
-await fs.copyFile(path.join(root, 'tv', 'autostart.sh'), path.join(output, 'autostart.sh'));
-await fs.chmod(path.join(output, 'autostart.sh'), 0o755);
+for (const script of ['autostart.sh', 'home-watch.sh']) {
+  await fs.copyFile(path.join(root, 'tv', script), path.join(output, script));
+  await fs.chmod(path.join(output, script), 0o755);
+}
 for (const [name, size] of [
   [manifest.icon, 80],
   [manifest.largeIcon, 130],

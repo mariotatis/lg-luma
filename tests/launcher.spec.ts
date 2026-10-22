@@ -82,16 +82,20 @@ test('full-page settings support remote navigation, Back, and persistent prefere
     await page.keyboard.press('ArrowDown');
     await expect(page.locator(':focus')).toHaveAttribute('data-focusable', id);
   }
+  // Down passes the language selector like any other row; OK opens it.
   await page.keyboard.press('ArrowDown');
-  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
-  await page.keyboard.press('Escape');
-  await page.locator('[data-focusable="setting-refresh"]').focus();
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-refresh');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
   await page.keyboard.press('ArrowUp');
   await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-language');
   await page.locator('[data-focusable="setting-refresh"]').focus();
   await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-refresh');
   await page.keyboard.press('ArrowDown');
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-use-as-home');
+  await page.keyboard.press('ArrowDown');
   await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-show-weather');
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-use-as-home');
   await page.getByRole('button', { name: 'Summit', exact: true }).click();
   await page.getByRole('switch', { name: '24-hour clock', exact: false }).click();
   await page.getByRole('switch', { name: 'Reduced motion', exact: false }).click();
@@ -110,7 +114,7 @@ test('display language menu supports vertical remote navigation and persists', a
   const trigger = page.getByRole('button', { name: 'Display language: English' });
   await expect(trigger).toBeVisible();
   await trigger.focus();
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('[data-focusable="language-option-de"]')).toBeFocused();
@@ -123,13 +127,44 @@ test('display language menu supports vertical remote navigation and persists', a
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await page.getByRole('button', { name: 'Anzeigesprache: Deutsch' }).focus();
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(page.locator('[data-focusable="language-option-de"]')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.getByRole('button', { name: '主页', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Luma 设置', exact: true })).toBeVisible();
+});
+
+test('the language menu ends lead out of it and leaving sideways closes it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const trigger = page.locator('[data-focusable="setting-language"]');
+  const menu = page.getByRole('listbox');
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(trigger).toBeFocused();
+  await expect(menu).toHaveCount(0);
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
+  for (const option of ['de', 'zh']) {
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator(`[data-focusable="language-option-${option}"]`)).toBeFocused();
+  }
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="setting-refresh"]')).toBeFocused();
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en-US');
+
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', /^wallpaper-/);
 });
 
 test('Interface D-pad moves down to the language selector and up from refresh', async ({
@@ -231,9 +266,9 @@ test('the packaged file app loads offline with CSP, local fonts, no module fetch
       }),
     ),
   );
-  expect(thumbnails).toHaveLength(9);
+  expect(thumbnails).toHaveLength(12);
   const photos = thumbnails.filter((image) => image.src.endsWith('.jpg'));
-  expect(photos).toHaveLength(6);
+  expect(photos).toHaveLength(9);
   for (const photo of photos) {
     expect(photo.src).toContain('/wallpaper-thumbnails/');
     expect([photo.width, photo.height]).toEqual([480, 270]);
@@ -342,6 +377,83 @@ test('a TV uses its real inventory and launches TV settings separately from Luma
   await expect(settingsPage.getByRole('button', { name: 'TV settings', exact: true })).toHaveCount(
     0,
   );
+});
+
+test('home mode starts the TV watcher and keeps Back inside Luma', async ({ page }) => {
+  await installMockTV(page, false);
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.__backs = 0;
+    w.PalmSystem.platformBack = () => w.__backs++;
+  });
+  const homeWatch = () =>
+    page.evaluate(() =>
+      (window as any).__calls
+        .filter((call: any) => call.payload.command?.includes('home-watch.sh'))
+        .map((call: any) => call.payload.command.split(' ').pop()),
+    );
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Open A real TV app', exact: true })).toBeVisible();
+  expect(await homeWatch()).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => (window as any).__backs)).toBe(1);
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const toggle = page.getByRole('switch', { name: /Use Luma as home/ });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(homeWatch).toEqual(['enable']);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'Favorites', exact: true })).toBeVisible();
+  // Back on Home rests on the ambient clock; Back again returns Home.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ambient-screen')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ambient-screen')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open A real TV app', exact: true })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__backs)).toBe(1);
+
+  // The watcher is restarted at launch in case the TV rebooted without it.
+  await page.reload();
+  await expect.poll(homeWatch).toEqual(['enable']);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect.poll(homeWatch).toEqual(['enable', 'disable']);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => page.evaluate(() => (window as any).__backs)).toBe(1);
+});
+
+test('a TV start saves the inventory and shows it at once on the next start', async ({ page }) => {
+  await installMockTV(page, false);
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Open A real TV app', exact: true })).toBeVisible();
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('luma.inventory.v1') ?? 'null'),
+  );
+  expect(saved.apps.map((app: { id: string }) => app.id)).toEqual(['com.example.real']);
+  expect(saved.inputs.map((input: { title: string }) => input.title)).toEqual(['Real HDMI']);
+});
+
+test('a saved inventory stays usable when the live TV inventory fails', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'luma.inventory.v1',
+      JSON.stringify({
+        apps: [{ id: 'com.example.saved', title: 'A saved TV app' }],
+        inputs: [],
+      }),
+    ),
+  );
+  await installMockTV(page, true);
+  await page.goto('/');
+  const saved = page.getByRole('button', { name: 'Open A saved TV app', exact: true });
+  await expect(saved).toBeVisible();
+  await expect(saved).toBeFocused();
+  await expect(page.getByText(/Mock: service is not elevated/)).toBeVisible();
+  await expect(page.locator('.skeleton')).toHaveCount(0);
 });
 
 test('TV inventory failure is actionable and never becomes a pretend desktop inventory', async ({
@@ -544,7 +656,17 @@ test('connection artwork follows the reported device labels without changing the
     { appId: 'com.webos.app.hdmi2', id: 'HDMI_2', port: 2, label: 'USB media', connected: true },
     { appId: 'com.webos.app.hdmi3', id: 'HDMI_3', port: 3, label: 'HDMI 3', connected: true },
     { appId: 'com.webos.app.hdmi4', id: 'HDMI_4', port: 4, label: 'Apple TV', connected: true },
-  ]);
+    {
+      appId: 'com.webos.app.hdmi5',
+      id: 'HDMI_5',
+      port: 5,
+      label: 'Xuper',
+      connected: true,
+      spdVendorName: 'Amlogic',
+      subList: [{ id: 'SIMPLINK', osdName: 'Xuper', cecpDevType: 4 }],
+    },
+    { appId: 'com.webos.app.hdmi6', id: 'HDMI_6', port: 6, label: 'Den box', connected: true },
+  ] as any[]);
   await page.goto('/');
   await page.getByRole('button', { name: 'Inputs', exact: true }).click();
   const playstation = page.locator('[data-focusable="input-com.webos.app.hdmi1"]');
@@ -554,6 +676,12 @@ test('connection artwork follows the reported device labels without changing the
   ).toBeVisible();
   await expect(
     page.locator('[data-focusable="input-com.webos.app.hdmi3"] [data-connection-icon="hdmi"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-focusable="input-com.webos.app.hdmi5"] [data-connection-icon="streamer"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-focusable="input-com.webos.app.hdmi6"] [data-connection-icon="device"]'),
   ).toBeVisible();
   const appleTV = page.locator('[data-focusable="input-com.webos.app.hdmi4"]');
   await expect(appleTV.locator('[data-connection-icon="apple-tv"]')).toBeVisible();
@@ -867,4 +995,40 @@ test('app actions close immediately, keep favorites first, and filter hidden app
   await expect(browser.locator('.favorite-badge')).toHaveCount(0);
   favorites = await readFavoriteOrder();
   expect((await readLibraryOrder()).slice(0, favorites.length)).toEqual(favorites);
+});
+
+test('idle Luma rests on the ambient clock, then a city video, and any key returns', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.route('**/weather-videos/other/*.mp4', () => undefined);
+  await page.goto('/');
+  const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
+  await expect(netflix).toBeFocused();
+  await page.clock.fastForward('01:50');
+  await expect(page.locator('.ambient-screen')).toHaveCount(0);
+  await page.clock.fastForward('00:15');
+  await expect(page.locator('.ambient-screen')).toBeVisible();
+  await expect(page.locator('.is-screensaver')).toHaveCount(0);
+  await page.clock.fastForward('05:05');
+  await expect(page.locator('.is-screensaver')).toHaveCount(1);
+  await expect(page.locator('.background-video')).toHaveAttribute(
+    'src',
+    /^\.\/weather-videos\/other\/(china|la|sfo)\.mp4$/,
+  );
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.ambient-screen')).toHaveCount(0);
+  await expect(page.locator('.is-screensaver')).toHaveCount(0);
+  await expect(page.locator('.background-video')).toHaveCount(0);
+  await expect(netflix).toBeFocused();
+
+  // Activity and typing keep Luma awake.
+  await page.clock.fastForward('01:30');
+  await page.keyboard.press('ArrowRight');
+  await page.clock.fastForward('01:30');
+  await expect(page.locator('.ambient-screen')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Apps', exact: true }).click();
+  await page.getByRole('searchbox').focus();
+  await page.clock.fastForward('03:00');
+  await expect(page.locator('.ambient-screen')).toHaveCount(0);
 });

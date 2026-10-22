@@ -137,6 +137,24 @@ export async function launchApp(id: string): Promise<void> {
   await nativeCall(`${manager}launch`, { id });
 }
 
+const HOME_WATCH = '/media/developer/apps/usr/palm/applications/com.luma.launcher/home-watch.sh';
+
+// Starts or stops tv/home-watch.sh, which reopens Luma on wake and on LG's home screen.
+export async function setHomeMode(enabled: boolean): Promise<void> {
+  if (!isTV()) return;
+  const envelope = await nativeCall('luna://org.webosbrew.hbchannel.service/exec', {
+    command: `sh ${HOME_WATCH} ${enabled ? 'enable' : 'disable'}`,
+  });
+  if (
+    [envelope.returnCode, envelope.exitCode].some(
+      (code) => code !== undefined && code !== 0 && code !== '0',
+    )
+  )
+    throw new Error(
+      typeof envelope.stderrString === 'string' ? envelope.stderrString.slice(0, 240) : '',
+    );
+}
+
 export function platformBack(): void {
   const system = window.PalmSystem ?? window.webOSSystem;
   system?.platformBack?.();

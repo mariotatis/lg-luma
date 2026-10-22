@@ -1,13 +1,48 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Eye, LoaderCircle, MapPin, Search, Thermometer, X } from 'lucide-react';
+import {
+  Check,
+  Clapperboard,
+  Eye,
+  LoaderCircle,
+  MapPin,
+  Search,
+  Thermometer,
+  X,
+} from 'lucide-react';
 import type { TemperatureUnit, WeatherLocation } from '../types';
-import { clearWeatherCache, locationDetail, locationKey, searchLocations } from '../weather';
+import {
+  clearWeatherCache,
+  formatTemperature,
+  locationDetail,
+  locationKey,
+  searchLocations,
+  weatherCondition,
+} from '../weather';
+import { useWeather } from '../use-weather';
 import { useTranslation } from '../i18n';
 
 const temperatureUnits = [
   { value: 'celsius', label: 'celsius', symbol: '°C' },
   { value: 'fahrenheit', label: 'fahrenheit', symbol: '°F' },
 ] as const;
+
+function SavedLocationWeather({
+  location,
+  unit,
+}: {
+  location: WeatherLocation;
+  unit: TemperatureUnit;
+}) {
+  const { language } = useTranslation();
+  const { reading } = useWeather(location);
+  if (!reading) return null;
+  return (
+    <span className="saved-location-weather">
+      <strong>{formatTemperature(reading.temperature, unit)}</strong>
+      <span>{weatherCondition(reading.code, reading.isDay, language).label}</span>
+    </span>
+  );
+}
 
 export function WeatherSettings({
   location,
@@ -16,6 +51,8 @@ export function WeatherSettings({
   onEnabledChange,
   unit,
   onUnitChange,
+  dynamicBackground,
+  onDynamicBackgroundChange,
 }: {
   location: WeatherLocation | null;
   onChange: (location: WeatherLocation | null) => void;
@@ -23,6 +60,8 @@ export function WeatherSettings({
   onEnabledChange: (enabled: boolean) => void;
   unit: TemperatureUnit;
   onUnitChange: (unit: TemperatureUnit) => void;
+  dynamicBackground: boolean;
+  onDynamicBackgroundChange: (enabled: boolean) => void;
 }) {
   const { t, language } = useTranslation();
   const [query, setQuery] = useState('');
@@ -67,7 +106,7 @@ export function WeatherSettings({
         role="switch"
         aria-checked={enabled}
         data-focusable="setting-show-weather"
-        data-focus-down={`setting-temperature-${unit}`}
+        data-focus-down="setting-dynamic-background"
         onClick={() => onEnabledChange(!enabled)}
       >
         <Eye />
@@ -75,6 +114,24 @@ export function WeatherSettings({
           <strong>{t('showWidget')}</strong>
         </span>
         <span className={`toggle${enabled ? ' on' : ''}`}>
+          <i />
+        </span>
+      </button>
+      <button
+        className="setting-row weather-dynamic-background-toggle"
+        role="switch"
+        aria-checked={dynamicBackground}
+        data-focusable="setting-dynamic-background"
+        data-focus-up="setting-show-weather"
+        data-focus-down={`setting-temperature-${unit}`}
+        onClick={() => onDynamicBackgroundChange(!dynamicBackground)}
+      >
+        <Clapperboard />
+        <span>
+          <strong>{t('dynamicBackground')}</strong>
+          <small>{t('dynamicBackgroundHint')}</small>
+        </span>
+        <span className={`toggle${dynamicBackground ? ' on' : ''}`}>
           <i />
         </span>
       </button>
@@ -87,7 +144,7 @@ export function WeatherSettings({
           className="temperature-units"
           role="group"
           aria-labelledby="temperature-unit-label"
-          data-focus-up="setting-show-weather"
+          data-focus-up="setting-dynamic-background"
           data-focus-down="weather-location-query"
         >
           {temperatureUnits.map((option) => (
@@ -111,6 +168,7 @@ export function WeatherSettings({
             <strong>{location.name}</strong>
             <small>{locationDetail(location)}</small>
           </span>
+          <SavedLocationWeather location={location} unit={unit} />
           <button
             className="icon-button"
             type="button"

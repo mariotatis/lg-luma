@@ -69,6 +69,7 @@ export function normalizeAndVerifyPackage(bytes, manifest) {
     manifest.icon,
     manifest.largeIcon,
     'autostart.sh',
+    'home-watch.sh',
     'fonts/inter-latin.woff2',
     'wallpapers/dunes.jpg',
     'wallpapers/midnight.svg',
@@ -101,7 +102,10 @@ export function normalizeAndVerifyPackage(bytes, manifest) {
   for (const file of owned) {
     if (!['', '0', '5'].includes(file.type))
       throw new Error(`Unexpected package entry type: ${file.name}`);
-    const executable = file.type === '5' || file.name.endsWith('/autostart.sh');
+    const executable =
+      file.type === '5' ||
+      file.name.endsWith('/autostart.sh') ||
+      file.name.endsWith('/home-watch.sh');
     file.header.write(executable ? '0000755\0' : '0000644\0', 100, 8, 'ascii');
     file.header.fill(32, 148, 156);
     const sum = file.header.reduce((total, byte) => total + byte, 0);

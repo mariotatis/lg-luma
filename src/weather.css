@@ -120,6 +120,18 @@
   font-size: 0.75rem;
   color: var(--muted);
 }
+.saved-location > .saved-location-weather {
+  flex: none;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.4rem;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+.saved-location-weather > span {
+  color: var(--muted);
+}
 .saved-location .icon-button {
   width: 2.5rem;
   height: 2.5rem;

@@ -124,6 +124,20 @@ button svg {
 .wallpaper-northern-lights {
   filter: saturate(0.8);
 }
+.background-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.8s;
+}
+.background-video.ready {
+  opacity: 0.92;
+}
 .wallpaper-shade {
   background:
     linear-gradient(
@@ -674,7 +688,9 @@ button svg {
   color: #dedede;
   background: linear-gradient(145deg, #d6d6d63d, #a0a0a01a);
 }
-.input-streamer .input-art {
+.input-streamer .input-art,
+.input-audio .input-art,
+.input-device .input-art {
   color: #dedede;
   background: linear-gradient(145deg, #d6d6d633, #d6d6d614);
 }
@@ -1359,11 +1375,32 @@ button svg {
   font-size: 0.8rem;
   color: #f5f5f57a;
 }
+/* The city-video screensaver keeps the time small in a corner. */
+.is-screensaver .background-video.ready {
+  opacity: 1;
+}
+.is-screensaver .wallpaper-shade {
+  background: linear-gradient(180deg, #17191c00 55%, #17191c99);
+}
+.is-screensaver .ambient-screen {
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0 0 6.5rem 5.2rem;
+  text-align: left;
+}
+.is-screensaver .ambient-time {
+  font-size: 4.2rem;
+  line-height: 1.1;
+}
+.is-screensaver .ambient-hint {
+  left: 5.2rem;
+}
 .reduce-motion * {
   scroll-behavior: auto !important;
 }
 .reduce-motion .toggle i,
 .reduce-motion .wallpaper,
+.reduce-motion .background-video,
 .reduce-motion .input-card,
 .reduce-motion .nav-indicator {
   transition: none;
@@ -1401,6 +1438,7 @@ button svg {
   }
   .toggle i,
   .wallpaper,
+  .background-video,
   .input-card,
   .nav-indicator {
     transition: none;

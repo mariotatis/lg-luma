@@ -95,6 +95,8 @@ test('corrupt or foreign preferences recover, while intentionally empty favorite
   assert.equal(parsePreferences('{"version":1,"language":"de"}').language, 'de');
   assert.equal(parsePreferences('{"version":1,"language":"zh"}').language, 'zh');
   assert.equal(parsePreferences('{"version":1,"language":"unknown"}').language, 'en');
+  assert.equal(parsePreferences('{"version":1}').useAsHome, false);
+  assert.equal(parsePreferences('{"version":1,"useAsHome":true}').useAsHome, true);
   assert.deepEqual(parsePreferences('{"version":1,"favorites":[]}').favorites, []);
   const value = parsePreferences(
     JSON.stringify({
@@ -143,4 +145,33 @@ test('favorites sort first in saved order, with remaining apps alphabetical and 
     sortApps(apps, []).map((app) => app.title),
     ['Alpha', 'Beta', 'Charlie', 'Zulu'],
   );
+});
+
+test('input artwork uses names, HDMI-CEC device types, and source descriptions', () => {
+  const kinds = normalizeInputs([
+    // An Android TV box as reported by a webOS 10 TV: a custom name, CEC playback, Amlogic SPD.
+    {
+      appId: 'com.webos.app.hdmi1',
+      label: 'Xuper',
+      connected: true,
+      spdVendorName: 'Amlogic',
+      spdProductDescription: 'MBox Meson Ref',
+      subList: [{ id: 'SIMPLINK', osdName: 'Xuper', cecpDevType: 4 }],
+    },
+    { appId: 'com.webos.app.hdmi2', label: 'Living room', subList: [{ cecpDevType: 4 }] },
+    { appId: 'com.webos.app.hdmi3', label: 'HDMI 3', subList: [{ cecpDevType: 5 }] },
+    { appId: 'com.webos.app.hdmi4', label: 'Nintendo Switch', connected: true },
+    { appId: 'com.webos.app.hdmi5', label: 'Grandma box', connected: true },
+    { appId: 'com.webos.app.hdmi6', label: 'HDMI 6', connected: true },
+    { appId: 'com.webos.app.hdmi7', label: 'Connection hub', connected: true },
+  ]).map((input) => [input.title, input.kind]);
+  assert.deepEqual(kinds, [
+    ['Xuper', 'streamer'],
+    ['Living room', 'streamer'],
+    ['HDMI 3', 'audio'],
+    ['Nintendo Switch', 'console'],
+    ['Grandma box', 'device'],
+    ['HDMI 6', 'hdmi'],
+    ['Connection hub', 'device'],
+  ]);
 });

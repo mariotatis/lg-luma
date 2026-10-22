@@ -113,10 +113,14 @@ export function parseWeather(value: unknown): WeatherReading {
     (current.is_day !== 0 && current.is_day !== 1)
   )
     throw new Error('The weather service returned an unreadable reading.');
+  const offset = record(value) ? value.utc_offset_seconds : undefined;
   return {
     temperature: current.temperature_2m,
     code: current.weather_code,
     isDay: current.is_day === 1,
+    ...(typeof offset === 'number' && Number.isInteger(offset) && Math.abs(offset) <= 18 * 3600
+      ? { utcOffset: offset }
+      : {}),
   };
 }
 
@@ -156,6 +160,7 @@ export function readWeatherCache(location: WeatherLocation): CachedWeather | nul
     const age = Date.now() - cache.updatedAt;
     if (age < 0 || age > MAX_CACHE_AGE_MS) return null;
     const reading = parseWeather({
+      utc_offset_seconds: cache.reading.utcOffset,
       current: {
         temperature_2m: cache.reading.temperature,
         weather_code: cache.reading.code,

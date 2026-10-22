@@ -105,8 +105,14 @@ test('temperature units persist, work with the remote, and convert cached readin
   const celsius = page.getByRole('button', { name: 'Celsius', exact: true });
   const fahrenheit = page.getByRole('button', { name: 'Fahrenheit', exact: true });
   await expect(celsius).toHaveAttribute('aria-pressed', 'true');
+  const savedWeather = page.locator('.saved-location-weather');
+  await expect(savedWeather).toContainText('14°C');
+  await expect(savedWeather).toContainText('Partly cloudy');
   const visibility = page.getByRole('switch', { name: 'Show widget', exact: true });
+  const dynamicBackground = page.getByRole('switch', { name: /Dynamic background/ });
   await visibility.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(dynamicBackground).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(celsius).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -114,8 +120,12 @@ test('temperature units persist, work with the remote, and convert cached readin
   await page.keyboard.press('Enter');
   await expect(fahrenheit).toHaveAttribute('aria-pressed', 'true');
   await expect(celsius).toHaveAttribute('aria-pressed', 'false');
+  await expect(savedWeather).toContainText('58°F');
+  await page.keyboard.press('ArrowUp');
+  await expect(dynamicBackground).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(visibility).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await expect(fahrenheit).toBeFocused();
   await page.keyboard.press('Escape');
@@ -266,4 +276,114 @@ test('Back exits city editing before leaving Settings, including the TV Back key
   await expect(search).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', { name: 'Favorites', exact: true })).toBeVisible();
+});
+
+test('dynamic background plays the closest weather video and can be turned off', async ({
+  page,
+}) => {
+  await page.addInitScript((location) => {
+    if (!localStorage.getItem('luma.preferences.v1'))
+      localStorage.setItem(
+        'luma.preferences.v1',
+        JSON.stringify({ version: 1, weatherLocation: location }),
+      );
+  }, location);
+  await page.route('https://api.open-meteo.com/**', (route) =>
+    route.fulfill({
+      json: { utc_offset_seconds: 0, current: { temperature_2m: 8, weather_code: 63, is_day: 0 } },
+    }),
+  );
+  const requested: string[] = [];
+  await page.route('**/weather-videos/**/*.mp4', (route) => {
+    const name = new URL(route.request().url()).pathname.split('/weather-videos/')[1];
+    requested.push(name);
+    // Leave the any-time rain video pending so it stays selected.
+    if (name !== 'rain.mp4') return route.fulfill({ status: 404 });
+  });
+  await page.goto('/');
+  await expect(page.locator('.weather-summary')).toContainText('8°C');
+  await expect(page.locator('.background-video')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const toggle = page.getByRole('switch', { name: /Dynamic background/ });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('.background-video')).toHaveAttribute(
+    'src',
+    './weather-videos/rain.mp4',
+  );
+  expect(requested[0]).toBe('night/rain-night.mp4');
+  await page.reload();
+  await expect(page.locator('.background-video')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await toggle.click();
+  await expect(page.locator('.background-video')).toHaveCount(0);
+});
+
+test('video backgrounds play, persist, and show behind missing weather videos', async ({
+  page,
+}) => {
+  await page.route('**/weather-videos/other/*.mp4', () => undefined);
+  await page.route('https://api.open-meteo.com/**', (route) =>
+    route.fulfill({ json: { current: { temperature_2m: 20, weather_code: 0, is_day: 1 } } }),
+  );
+  await page.goto('/');
+  await expect(page.locator('.background-video')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Dynamic background', exact: true }),
+  ).toBeVisible();
+  const la = page.getByRole('button', { name: 'Los Angeles', exact: true });
+  await la.click();
+  await expect(la).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.wallpaper')).toHaveClass(/wallpaper-la/);
+  await expect(page.locator('.background-video')).toHaveAttribute(
+    'src',
+    './weather-videos/other/la.mp4',
+  );
+  await page.reload();
+  await expect(page.locator('.background-video')).toHaveAttribute(
+    'src',
+    './weather-videos/other/la.mp4',
+  );
+  const paused = () =>
+    page.locator('.background-video').evaluate((video: HTMLVideoElement) => video.paused);
+  await expect.poll(paused).toBe(false);
+  // Another app in front: stop decoding until Luma is visible again.
+  const setHidden = (hidden: boolean) =>
+    page.evaluate((value) => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, hidden);
+  await setHidden(true);
+  await expect.poll(paused).toBe(true);
+  await setHidden(false);
+  await expect.poll(paused).toBe(false);
+  // Weather mode without a matching weather video keeps the selected video.
+  await page.evaluate(() => {
+    const value = JSON.parse(localStorage.getItem('luma.preferences.v1')!);
+    localStorage.setItem(
+      'luma.preferences.v1',
+      JSON.stringify({
+        ...value,
+        dynamicBackground: true,
+        weatherLocation: {
+          name: 'Vienna',
+          region: '',
+          country: 'Austria',
+          latitude: 48.2,
+          longitude: 16.37,
+        },
+      }),
+    );
+  });
+  await page.route('**/weather-videos/*.mp4', (route) => route.fulfill({ status: 404 }));
+  await page.route('**/weather-videos/morning/*.mp4', (route) => route.fulfill({ status: 404 }));
+  await page.route('**/weather-videos/evening/*.mp4', (route) => route.fulfill({ status: 404 }));
+  await page.reload();
+  await expect(page.locator('.weather-summary')).toContainText('20°C');
+  await expect(page.locator('.background-video')).toHaveAttribute(
+    'src',
+    './weather-videos/other/la.mp4',
+  );
 });

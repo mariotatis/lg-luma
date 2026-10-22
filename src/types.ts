@@ -8,7 +8,10 @@ export type Wallpaper =
   | 'forest'
   | 'prism'
   | 'yosemite'
-  | 'northern-lights';
+  | 'northern-lights'
+  | 'china'
+  | 'la'
+  | 'sfo';
 export type Category = 'Streaming' | 'Music' | 'Gaming' | 'Utilities';
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
 export type Language = 'en' | 'de' | 'zh';
@@ -25,7 +28,7 @@ export interface TVInput {
   title: string;
   port: string;
   connected: boolean | null;
-  kind: 'console' | 'streamer' | 'computer' | 'hdmi';
+  kind: 'console' | 'streamer' | 'computer' | 'audio' | 'device' | 'hdmi';
 }
 
 export interface Preferences {
@@ -38,6 +41,8 @@ export interface Preferences {
   clock24: boolean;
   showHomeAppNames: boolean;
   showWeather: boolean;
+  dynamicBackground: boolean;
+  useAsHome: boolean;
   temperatureUnit: TemperatureUnit;
   language: Language;
   weatherLocation: WeatherLocation | null;
@@ -56,6 +61,8 @@ export interface WeatherReading {
   temperature: number;
   code: number;
   isDay: boolean;
+  // Location's offset from UTC, used to tell morning, day, and evening apart.
+  utcOffset?: number;
 }
 
 export interface Inventory {
