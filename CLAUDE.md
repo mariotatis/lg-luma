@@ -23,7 +23,7 @@ Run `pnpm build` before `pnpm test:browser`; the packaged-file test reads `dist/
 - Root SSH: `ssh -i ~/.ssh/lgtv_root -o IdentitiesOnly=yes root@192.168.1.82`. In zsh, pass ssh options directly; a `$OPTS` variable is not word-split.
 - Developer Mode device `lgtv` (port 9922) is usually closed because the session expires, so `pnpm deploy` / `ares-install` usually fail. Use root SSH instead.
 - On webOS 10, a root shell must call `luna-send -t 1 …`; `-n` returns nothing and does nothing useful.
-- The TV is unreachable while off or in deep standby.
+- The TV is unreachable while off or in deep standby. It is also unreachable when the Mac is on another network, such as an iPhone hotspot (`172.20.10.x`); check `ifconfig` for a `192.168.1.x` address.
 
 ### Installing a build on the TV
 
@@ -58,7 +58,8 @@ Never unpack the IPK by hand into `/media/developer/apps`. That skips the instal
 
 ## Open items
 
-- **Install the latest build on the TV.** The language-menu fix is built and pushed but not installed; the TV was off.
+The TV runs `6b266ab` (Spanish and the language-menu fix), installed 2026-10-21.
+
 - **Full-restart test.** LG Input Hook's boot script `/var/lib/webosbrew/init.d/inputhook` uses `luna-send -n`, so after a full restart the Home mapping may need Input Hook to be opened once. If it fails, have `home-watch.sh` start `org.webosbrew.inputhook.service` at boot, without editing Input Hook's files.
 - **Merge onto upstream v1.1.1** (`fork/main`) in a separate branch, run all checks, and open a PR on the fork.
 - **Wake flash:** LG's home shows for about a second after waking from standby. Suggest turning off the TV's Home Auto Launch, or shorten the watcher's 3-second post-wake wait.
