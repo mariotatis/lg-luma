@@ -7,6 +7,8 @@ import type { TVApp } from '../types';
 // background once they are older than SHELF_TTL_MS; apps can publish new content.
 const SHELF_TTL_MS = 10 * 60 * 1000;
 const shelves = new Map<string, { items: PreviewItem[]; at: number }>();
+// Matches the closing transition in styles.css.
+const SHELF_EXIT_MS = 400;
 const pending = new Map<string, Promise<PreviewItem[]>>();
 
 function fetchShelf(app: TVApp): Promise<PreviewItem[]> {
@@ -68,6 +70,13 @@ export function PreviewShelf({
   const [last, setLast] = useState<{ app: TVApp; items: PreviewItem[] } | null>(null);
   const current = open && app && items.length ? { app, items } : null;
   if (current && (last?.app !== current.app || last.items !== current.items)) setLast(current);
+  // Once the fade-out has finished, the closed shelf leaves the page entirely: on the TV a
+  // transparent, hidden shelf still left faint traces over the background.
+  useEffect(() => {
+    if (open) return;
+    const timer = setTimeout(() => setLast(null), SHELF_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [open]);
   const shown = current ?? last;
   if (!shown) return null;
   const label = t('previewShelf', { app: shown.app.title });

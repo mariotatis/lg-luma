@@ -55,7 +55,7 @@ for (const [name, size] of [
 await fs.writeFile(
   path.join(output, 'index.html'),
   `<!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17191c"><meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.ytimg.com http://ngfts.lge.com http://aic.imagesvc.lgtvcommon.com https://aic.imagesvc.lgtvcommon.com; font-src 'self' data:; connect-src https://api.open-meteo.com https://geocoding-api.open-meteo.com; object-src 'none'; base-uri 'none'"><title>Luma</title><link rel="icon" href="./${manifest.icon}"><link rel="stylesheet" href="./app.css"></head><body><div id="root"></div><script defer src="./app.js"></script></body></html>\n`,
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17191c"><meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.ytimg.com https://*.nflxso.net http://ngfts.lge.com http://aic.imagesvc.lgtvcommon.com https://aic.imagesvc.lgtvcommon.com; font-src 'self' data:; connect-src https://api.open-meteo.com https://geocoding-api.open-meteo.com; object-src 'none'; base-uri 'none'"><title>Luma</title><link rel="icon" href="./${manifest.icon}"><link rel="stylesheet" href="./app.css"></head><body><div id="root"></div><script defer src="./app.js"></script></body></html>\n`,
 );
 const files = await fs.readdir(output);
 const js = await fs.stat(path.join(output, 'app.js'));

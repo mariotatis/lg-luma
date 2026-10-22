@@ -41,6 +41,8 @@ export interface Preferences {
   clock24: boolean;
   showHomeAppNames: boolean;
   showPreviews: boolean;
+  // Apps whose preview shelf is turned off in Settings → Interface → Previews on Home.
+  disabledPreviews: string[];
   textNavigation: boolean;
   showWeather: boolean;
   dynamicBackground: boolean;

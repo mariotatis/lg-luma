@@ -101,6 +101,11 @@ test('corrupt or foreign preferences recover, while intentionally empty favorite
   assert.equal(parsePreferences('{"version":1}').textNavigation, true);
   assert.equal(parsePreferences('{"version":1,"textNavigation":false}').textNavigation, false);
   assert.equal(parsePreferences('{"version":1,"showPreviews":false}').showPreviews, false);
+  assert.deepEqual(parsePreferences('{"version":1}').disabledPreviews, []);
+  assert.deepEqual(
+    parsePreferences('{"version":1,"disabledPreviews":["netflix","bad id!",3]}').disabledPreviews,
+    ['netflix'],
+  );
   assert.equal(parsePreferences('{"version":1,"useAsHome":true}').useAsHome, true);
   assert.deepEqual(parsePreferences('{"version":1,"favorites":[]}').favorites, []);
   const value = parsePreferences(

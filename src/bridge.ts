@@ -81,15 +81,20 @@ export function nativeCall(
   });
 }
 
-async function inventoryRead(
+// Calls a private webOS service through the existing elevated Homebrew service and returns
+// its whole response. No credentials or environment reads; payload values are plain JSON
+// built from validated identifiers, so they cannot leave the quoted shell argument.
+async function rootRead(
   uri: string,
-  field: string,
   payload: Record<string, string> = {},
-): Promise<unknown> {
-  // Read private inventory APIs through the existing elevated Homebrew service.
-  // No credentials or environment reads.
-  const command = `if [ "$(id -u)" = "0" ]; then /usr/bin/luna-send -n 1 -w 4000 ${uri} '${JSON.stringify(payload)}'; else printf '%s\\n' '{"returnValue":false,"errorText":"Homebrew Channel needs root access."}'; fi`;
-  const envelope = await nativeCall('luna://org.webosbrew.hbchannel.service/exec', { command });
+  wait = 4000,
+): Promise<Record<string, any>> {
+  const command = `if [ "$(id -u)" = "0" ]; then /usr/bin/luna-send -n 1 -w ${wait} ${uri} '${JSON.stringify(payload)}'; else printf '%s\\n' '{"returnValue":false,"errorText":"Homebrew Channel needs root access."}'; fi`;
+  const envelope = await nativeCall(
+    'luna://org.webosbrew.hbchannel.service/exec',
+    { command },
+    wait + 2500,
+  );
   if (
     [envelope.returnCode, envelope.exitCode].some(
       (code) => code !== undefined && code !== 0 && code !== '0',
@@ -101,8 +106,18 @@ async function inventoryRead(
   if (typeof envelope.stdoutString !== 'string' || envelope.stdoutString.length > 2 * 1024 * 1024)
     throw new Error('Homebrew Channel returned no inventory.');
   const response = JSON.parse(envelope.stdoutString);
-  if (response?.returnValue !== true || !Array.isArray(response[field]))
+  if (response?.returnValue !== true)
     throw new Error(response?.errorText || 'The TV did not return its inventory.');
+  return response;
+}
+
+async function inventoryRead(
+  uri: string,
+  field: string,
+  payload: Record<string, string> = {},
+): Promise<unknown> {
+  const response = await rootRead(uri, payload);
+  if (!Array.isArray(response[field])) throw new Error('The TV did not return its inventory.');
   return response[field];
 }
 
@@ -139,6 +154,13 @@ export async function readAppContent(appId: string): Promise<unknown> {
   return inventoryRead('luna://com.webos.service.contentminer/getContentData', 'contents', {
     appId,
   });
+}
+
+// Netflix's partner "discovery" rows, as it provides them for LG's home screen: the
+// profile's Continue Watching first, then today's picks. Each tile carries a deep link.
+export async function readNetflixDiscovery(): Promise<unknown> {
+  const response = await rootRead('luna://netflix.service/discovery', {}, 8000);
+  return response.data?.discovery?.groups;
 }
 
 export async function launchApp(

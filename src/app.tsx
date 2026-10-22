@@ -34,7 +34,8 @@ const SHELF_DELAY_MS = 250;
 const screensaverVideos = wallpapers.flatMap((wallpaper) => wallpaper.video ?? []);
 import { BackgroundVideo } from './components/background-video';
 import { PreviewShelf, prefetchPreviews, usePreviewItems } from './components/preview-shelf';
-import type { PreviewItem } from './previews';
+import { PREVIEW_APP_IDS, type PreviewItem } from './previews';
+import { PreviewSettings } from './components/preview-settings';
 import { readInventoryCache, saveInventoryCache } from './inventory-cache';
 import { WeatherBackground } from './components/weather-background';
 import { moveFavorite } from './favorites';
@@ -76,6 +77,7 @@ function Launcher({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [optionsApp, setOptionsApp] = useState<TVApp | null>(null);
+  const [previewsOpen, setPreviewsOpen] = useState(false);
   const [reordering, setReordering] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | null>(null);
@@ -230,13 +232,28 @@ function Launcher({
       document.removeEventListener('focusin', follow);
     };
   }, [page]);
+  // Installed apps with a verified shelf, in the order Settings lists them.
+  const previewApps = useMemo(
+    () => PREVIEW_APP_IDS.flatMap((id) => appMap.get(id) ?? []),
+    [appMap],
+  );
   const shelfApp =
-    preferences.showPreviews && shelfAppId && !reordering ? appMap.get(shelfAppId) : undefined;
+    preferences.showPreviews &&
+    shelfAppId &&
+    !reordering &&
+    !preferences.disabledPreviews.includes(shelfAppId)
+      ? appMap.get(shelfAppId)
+      : undefined;
   // On the TV, favorites' shelves load in the background once the inventory is in.
   useEffect(() => {
     if (isTV() && preferences.showPreviews && !loading && favorites.length)
-      void prefetchPreviews(favorites);
-  }, [preferences.showPreviews, loading, favorites]);
+      void prefetchPreviews(
+        favorites.filter(
+          (app) =>
+            PREVIEW_APP_IDS.includes(app.id) && !preferences.disabledPreviews.includes(app.id),
+        ),
+      );
+  }, [preferences.showPreviews, preferences.disabledPreviews, loading, favorites]);
   const shelfItems = usePreviewItems(shelfApp);
   const shelfOpen = page === 'home' && shelfItems.length > 0;
   const closeShelf = useCallback(() => {
@@ -394,6 +411,10 @@ function Launcher({
         }
         if (optionsApp) {
           setOptionsApp(null);
+          return;
+        }
+        if (previewsOpen) {
+          setPreviewsOpen(false);
           return;
         }
         if (shelfOpen) {
@@ -870,6 +891,8 @@ function Launcher({
             {page === 'settings' ? (
               <Settings
                 preferences={preferences}
+                previewApps={previewApps}
+                onOpenPreviews={() => setPreviewsOpen(true)}
                 onUpdate={update}
                 onRefresh={() => {
                   void refresh();
@@ -946,6 +969,14 @@ function Launcher({
           </footer>
         </div>
       )}
+      {previewsOpen ? (
+        <PreviewSettings
+          apps={previewApps}
+          preferences={preferences}
+          onUpdate={update}
+          onClose={() => setPreviewsOpen(false)}
+        />
+      ) : null}
       {optionsApp ? (
         <AppOptions
           key="options"

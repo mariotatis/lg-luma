@@ -24,7 +24,7 @@ Run `pnpm build` before `pnpm test:browser`; the packaged-file test reads `dist/
 - LG webOS **10.3.2** (Rockhopper), rooted with Homebrew Channel, at `192.168.1.82`.
 - Root SSH: `ssh -i ~/.ssh/lgtv_root -o IdentitiesOnly=yes root@192.168.1.82`. In zsh, pass ssh options directly; a `$OPTS` variable is not word-split.
 - Developer Mode device `lgtv` (port 9922) is usually closed because the session expires, so `pnpm deploy` / `ares-install` usually fail. Use root SSH instead.
-- On webOS 10, a root shell must call `luna-send -t 1 …`; `-n` returns nothing and does nothing useful.
+- On webOS 10, a root shell must call `luna-send -t 1 …`; `-n` returns nothing and does nothing useful. `-t` prints the payload through GLib, which shows non-ASCII as `?` unless `CHARSET=UTF-8` is set; that affects only these SSH checks, since Luma's `-n` calls through Homebrew Channel return correct UTF-8.
 - The TV is unreachable while off or in deep standby. It is also unreachable when the Mac is on another network, such as an iPhone hotspot (`172.20.10.x`); check `ifconfig` for a `192.168.1.x` address.
 
 ### Installing a build on the TV
@@ -64,9 +64,10 @@ Never unpack the IPK by hand into `/media/developer/apps`. That skips the instal
 - **Data source on the TV:** webOS's internal `luna://com.webos.service.contentminer/getContentData {"appId":…}`, which feeds LG's home screen, read through Homebrew Channel's root exec (`readAppContent` in `bridge.ts`). Entries have `type` (`title`, then `content`), `titleText`, `image`/`image_4k` URLs, and `onClick.{contentId,targetAppId}`.
   - On this TV, YouTube publishes about 14 personalized videos (from the account used on the TV, apparently the kid's) and LG Channels about 9 channels. Apple TV, Spotify, and others are supported but empty. Netflix, Disney+, and Prime Video return "Contents for this app are unsupported".
   - **Deep link verified for YouTube:** `applicationManager/launch {"id":"youtube.leanback.v4","params":{"contentTarget":"<contentId>"}}` plays that video. LG Channels uses the same shape with a URL-encoded JSON `contentId`; not yet verified on the TV.
+  - **Netflix** does not use contentminer, but its native service `luna://netflix.service/discovery {}` (callable as root; `readNetflixDiscovery` in `bridge.ts`) returns Netflix's partner rows for LG: `data.discovery.groups[].{title, tiles[].{title, deepLink, images.tile.url}}`. The first group is the TV profile's **Continue Watching** (`listContext=continueWatching`), then today's picks. `launch {"id":"netflix","params":{"contentTarget":"<deepLink>"}}` resumes that title (verified). Deep links carry `expireAt` (about a day). Images come from `https://*.nflxso.net`. `netflix.service/search {"query":…}` also returns titles with deep links (not used yet). Netflix's local data is in an encrypted secure store and has no readable history.
   - Shelves are cached, refreshed after 10 minutes, and favorites are prefetched in the background once the inventory loads. The desktop preview uses sample YouTube videos; the TV never does.
-  - The packaged CSP allows images from `https://*.ytimg.com`, `http://ngfts.lge.com`, and `http(s)://aic.imagesvc.lgtvcommon.com`. Another app's shelf may need its image host added in `tools/build.mjs`.
-- **Settings → Interface → Show app previews on Home** (`showPreviews`, on by default) turns shelves off.
+  - The packaged CSP allows images from `https://*.ytimg.com`, `https://*.nflxso.net`, `http://ngfts.lge.com`, and `http(s)://aic.imagesvc.lgtvcommon.com`. Another app's shelf may need its image host added in `tools/build.mjs`.
+- **Settings → Interface → Previews on Home** opens a panel (`src/components/preview-settings.tsx`, a `Dialog` whose open state lives in `app.tsx` so Back closes it first). It has the master switch (`showPreviews`, on by default) and one switch per installed app in `PREVIEW_APP_IDS` (Netflix, YouTube, LG Channels); turned-off apps are stored in `disabledPreviews`. The Interface row shows "N of M on" or "Off". Only those three apps get shelves, because their content and deep links are verified. The YouTube shelf comes from the account last used in the TV's YouTube app (it looked like the kid's), and it can include content a parent may not want. The per-app switch is the parental control here; Restricted Mode, YouTube Kids, or a supervised account are the real fix.
 - **Settings → Interface → Menu with labels** (`textNavigation`, on by default). Off turns Home/Apps/Inputs/Settings into round icon buttons (house, grid, cable, gear) lined up at the right beside the TV settings button; the current page is filled.
 - **Focus fixes:** cards take focus only on real pointer movement (a resting cursor no longer steals focus when the shelf appears), and Back from another page no longer re-focuses the first app after a quick remote press.
 
@@ -74,7 +75,7 @@ Never unpack the IPK by hand into `/media/developer/apps`. That skips the instal
 
 The TV runs the `youtube-preview-shelf` build (YouTube shelf with live data), installed 2026-10-21.
 
-- **Real-content alternatives for Netflix and others:** none official. Only unofficial catalogs (such as JustWatch) could provide titles and IDs; not recommended.
+- **Disney+, Prime Video, and others:** no published content found yet. Check each app's native service the same way as Netflix (look for `search`/`discovery`-style methods in its service binary).
 - **Verify the LG Channels deep link** on the TV, and add LG Channels to favorites if its shelf should show.
 
 - **Full-restart test.** LG Input Hook's boot script `/var/lib/webosbrew/init.d/inputhook` uses `luna-send -n`, so after a full restart the Home mapping may need Input Hook to be opened once. If it fails, have `home-watch.sh` start `org.webosbrew.inputhook.service` at boot, without editing Input Hook's files.

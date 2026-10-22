@@ -12,7 +12,7 @@ import {
   Type,
 } from 'lucide-react';
 import { WeatherSettings } from './weather-settings';
-import type { Language, Preferences } from '../types';
+import type { Language, Preferences, TVApp } from '../types';
 import { useRef, useState } from 'react';
 import { wallpapers, wallpaperThumbnail } from '../wallpapers';
 
@@ -26,11 +26,14 @@ import { useTranslation, wallpaperLabel, type MessageKey } from '../i18n';
 
 interface Props {
   preferences: Preferences;
+  // Installed apps that can show a preview shelf.
+  previewApps: TVApp[];
   onUpdate: (patch: Partial<Preferences>) => void;
   onRefresh: () => void;
+  onOpenPreviews: () => void;
 }
 
-export function Settings({ preferences, onUpdate, onRefresh }: Props) {
+export function Settings({ preferences, previewApps, onUpdate, onRefresh, onOpenPreviews }: Props) {
   const { t, language } = useTranslation();
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const languageButton = useRef<HTMLButtonElement>(null);
@@ -105,18 +108,25 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
               </button>
               <button
                 className="setting-row"
-                role="switch"
-                aria-checked={preferences.showPreviews}
+                aria-haspopup="dialog"
                 data-focusable="setting-previews"
-                onClick={() => onUpdate({ showPreviews: !preferences.showPreviews })}
+                onClick={onOpenPreviews}
               >
                 <GalleryHorizontal />
                 <span>
-                  <strong>{t('showPreviews')}</strong>
+                  <strong>{t('previewsOnHome')}</strong>
+                  <small>
+                    {preferences.showPreviews
+                      ? t('previewsSummary', {
+                          on: previewApps.filter(
+                            (app) => !preferences.disabledPreviews.includes(app.id),
+                          ).length,
+                          total: previewApps.length,
+                        })
+                      : t('previewsOff')}
+                  </small>
                 </span>
-                <span className={`toggle${preferences.showPreviews ? ' on' : ''}`}>
-                  <i />
-                </span>
+                <ChevronRight />
               </button>
               <button
                 className="setting-row"

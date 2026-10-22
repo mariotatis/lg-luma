@@ -309,10 +309,12 @@ async function installMockTV(
   devices = [
     { appId: 'com.webos.app.hdmi2', id: 'HDMI_2', port: 2, label: 'Real HDMI', connected: true },
   ],
+  // Netflix discovery groups; without them the service answers with an error.
+  netflixGroups?: unknown[],
 ) {
   const manifest = JSON.parse(readFileSync(path.resolve('appinfo.json'), 'utf8'));
   await page.addInitScript(
-    ({ denied, requiredACG, apps, devices }) => {
+    ({ denied, requiredACG, apps, devices, netflixGroups }) => {
       const w = window as typeof window & { __calls: { uri: string; payload: any }[] };
       w.__calls = [];
       w.PalmSystem = { identifier: 'com.luma.launcher' };
@@ -338,40 +340,44 @@ async function installMockTV(
               response = {
                 returnValue: true,
                 stdoutString: JSON.stringify(
-                  payload.command.includes('contentminer')
-                    ? // Shaped like webOS 10's contentminer: a title row, then content.
-                      payload.command.includes('"appId":"youtube.leanback.v4"')
-                      ? {
-                          returnValue: true,
-                          contents: [
-                            { type: 'title', titleText: '', onClick: { contentId: '' } },
-                            ...['aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({
-                              type: 'content',
-                              titleText: `Published video ${index + 1}`,
-                              category: '',
-                              image: { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` },
-                              image_4k: { url: '' },
-                              onClick: {
-                                contentId: `v=${id}&launch=launcher&shelf=1`,
-                                launchParam: null,
-                                targetAppId: 'youtube.leanback.v4',
-                              },
-                            })),
-                          ],
-                        }
-                      : {
-                          returnValue: false,
-                          errorText: 'Contents for this app are unsupported',
-                        }
-                    : payload.command.includes('listApps')
-                      ? {
-                          returnValue: true,
-                          apps,
-                        }
-                      : {
-                          returnValue: true,
-                          devices,
-                        },
+                  payload.command.includes('netflix.service/discovery')
+                    ? netflixGroups
+                      ? { returnValue: true, data: { discovery: { groups: netflixGroups } } }
+                      : { returnValue: false, errorText: 'Service does not exist' }
+                    : payload.command.includes('contentminer')
+                      ? // Shaped like webOS 10's contentminer: a title row, then content.
+                        payload.command.includes('"appId":"youtube.leanback.v4"')
+                        ? {
+                            returnValue: true,
+                            contents: [
+                              { type: 'title', titleText: '', onClick: { contentId: '' } },
+                              ...['aaaaaaaaaaa', 'bbbbbbbbbbb'].map((id, index) => ({
+                                type: 'content',
+                                titleText: `Published video ${index + 1}`,
+                                category: '',
+                                image: { url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` },
+                                image_4k: { url: '' },
+                                onClick: {
+                                  contentId: `v=${id}&launch=launcher&shelf=1`,
+                                  launchParam: null,
+                                  targetAppId: 'youtube.leanback.v4',
+                                },
+                              })),
+                            ],
+                          }
+                        : {
+                            returnValue: false,
+                            errorText: 'Contents for this app are unsupported',
+                          }
+                      : payload.command.includes('listApps')
+                        ? {
+                            returnValue: true,
+                            apps,
+                          }
+                        : {
+                            returnValue: true,
+                            devices,
+                          },
                 ),
               };
           } else if (uri.includes('getAppLoadStatus'))
@@ -381,7 +387,7 @@ async function installMockTV(
         }
       };
     },
-    { denied, requiredACG: manifest.requiredACG as string[], apps, devices },
+    { denied, requiredACG: manifest.requiredACG as string[], apps, devices, netflixGroups },
   );
 }
 
@@ -1102,6 +1108,20 @@ test('a focused favorite with highlights opens its preview shelf under a lifted 
   await expect(youtube).toBeFocused();
   await expect(shelf).toBeVisible();
   await expect(hero).toHaveClass(/has-shelf/);
+  // Long titles stay inside their card, ending in an ellipsis.
+  const overflow = await page.locator('.preview-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const title = card.querySelector('.preview-title') as HTMLElement;
+      return title.getBoundingClientRect().right - card.getBoundingClientRect().right;
+    }),
+  );
+  expect(Math.max(...overflow)).toBeLessThanOrEqual(0.5);
+  expect(
+    await page
+      .locator('.preview-title')
+      .first()
+      .evaluate((title) => title.scrollWidth > title.clientWidth),
+  ).toBe(true);
   // The greeting stays readable above the shelf instead of being replaced.
   await expect(page.locator('#greeting')).toBeVisible();
 
@@ -1127,16 +1147,30 @@ test('a focused favorite with highlights opens its preview shelf under a lifted 
   await expect(hero).not.toHaveClass(/has-shelf/);
   await page.waitForTimeout(500);
   await expect(shelf).toHaveCount(0);
+  // After its fade-out, a closed shelf leaves no hidden copy on the page.
+  await expect(page.locator('.preview-shelf')).toHaveCount(0);
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowRight');
   await expect(shelf).toBeVisible();
 
-  // Turning previews off in Settings → Interface keeps the greeting for every app.
+  // Settings → Interface → Previews on Home: the master switch, then one switch per app.
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const previews = page.getByRole('switch', { name: 'Show app previews on Home', exact: true });
-  await expect(previews).toHaveAttribute('aria-checked', 'true');
-  await previews.click();
-  await expect(previews).toHaveAttribute('aria-checked', 'false');
+  const row = page.locator('[data-focusable="setting-previews"]');
+  await expect(row).toContainText('2 of 2 on');
+  await row.focus();
+  await page.keyboard.press('Enter');
+  const panel = page.getByRole('dialog', { name: 'Previews on Home' });
+  const all = panel.getByRole('switch', { name: 'Show app previews on Home', exact: true });
+  const youtubeSwitch = panel.getByRole('switch', { name: 'YouTube', exact: true });
+  await expect(all).toBeFocused();
+  await expect(panel.getByRole('switch')).toHaveCount(3);
+  // Only YouTube's shelf turns off; Back closes the panel and stays in Settings.
+  await youtubeSwitch.click();
+  await expect(youtubeSwitch).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(row).toBeFocused();
+  await expect(row).toContainText('1 of 2 on');
   await page.keyboard.press('Escape');
   await expect(netflix).toBeFocused();
   await page.keyboard.press('ArrowRight');
@@ -1147,8 +1181,26 @@ test('a focused favorite with highlights opens its preview shelf under a lifted 
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(500);
   await expect(shelf).toHaveCount(0);
+
+  // The master switch turns every shelf off and keeps each app's own choice.
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await previews.click();
+  await row.focus();
+  await page.keyboard.press('Enter');
+  await youtubeSwitch.click();
+  await all.click();
+  await expect(all).toHaveAttribute('aria-checked', 'false');
+  await expect(youtubeSwitch).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  await expect(row).toContainText('Off');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(500);
+  await expect(shelf).toHaveCount(0);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await row.focus();
+  await page.keyboard.press('Enter');
+  await all.click();
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
   await expect(youtube).toBeFocused();
@@ -1204,17 +1256,23 @@ test('on the TV, shelves show the content apps publish to webOS and open it dire
   await page.goto('/');
   const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
   await expect(netflix).toBeFocused();
-  // Favorites' shelves were requested in the background, without any focus.
+  // Favorites' shelves were requested in the background, without any focus: Netflix
+  // through its own discovery service, YouTube through webOS's published content.
   await expect
     .poll(() =>
       page.evaluate(() =>
         (window as any).__calls
-          .filter((call: any) => call.payload.command?.includes('contentminer'))
-          .map((call: any) => /"appId":"([^"]+)"/.exec(call.payload.command)![1]),
+          .map((call: any) => call.payload.command ?? '')
+          .filter((command: string) => /contentminer|netflix\.service/.test(command))
+          .map((command: string) =>
+            command.includes('netflix.service/discovery')
+              ? 'netflix discovery'
+              : /"appId":"([^"]+)"/.exec(command)![1],
+          ),
       ),
     )
-    .toEqual(['netflix', 'youtube.leanback.v4']);
-  // Netflix publishes nothing, so it keeps the greeting.
+    .toEqual(['netflix discovery', 'youtube.leanback.v4']);
+  // Netflix's discovery service is unavailable here, so it keeps the greeting.
   await page.waitForTimeout(500);
   await expect(page.locator('.preview-shelf.is-open')).toHaveCount(0);
 
@@ -1237,6 +1295,60 @@ test('on the TV, shelves show the content apps publish to webOS and open it dire
       {
         id: 'youtube.leanback.v4',
         params: { contentTarget: 'v=bbbbbbbbbbb&launch=launcher&shelf=1' },
+      },
+    ]);
+});
+
+test("Netflix's shelf shows Continue Watching first and resumes a title directly", async ({
+  page,
+}) => {
+  await page.route('https://*.nflxso.net/**', (route) => route.fulfill({ status: 404 }));
+  const tile = (title: string, movie: string, context: string) => ({
+    title,
+    deepLink: `expireAt=1792728398&listContext=${context}&m=${movie}&source_type=27`,
+    images: { tile: { url: `https://occ-0.nflxso.net/${movie}.jpg`, width: 390, height: 219 } },
+  });
+  await installMockTV(
+    page,
+    false,
+    [{ id: 'netflix', title: 'Netflix', visible: true }],
+    undefined,
+    [
+      {
+        title: 'Continue watching for Mario',
+        tiles: [tile('A family', '70143859', 'continueWatching')],
+      },
+      {
+        title: "Today's picks",
+        tiles: [
+          tile('A family', '70143859', 'trendingNow'),
+          tile('A thriller', '81726799', 'trendingNow'),
+        ],
+      },
+    ],
+  );
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Open Netflix', exact: true })).toBeFocused();
+  await expect(page.locator('.preview-shelf.is-open')).toBeVisible();
+  // Continue Watching leads, and a title in both rows appears once.
+  await expect(page.locator('.preview-title')).toHaveText(['A family', 'A thriller']);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__calls
+          .filter((call: any) => call.uri.endsWith('/launch'))
+          .map((call: any) => call.payload),
+      ),
+    )
+    .toEqual([
+      {
+        id: 'netflix',
+        params: {
+          contentTarget:
+            'expireAt=1792728398&listContext=continueWatching&m=70143859&source_type=27',
+        },
       },
     ]);
 });

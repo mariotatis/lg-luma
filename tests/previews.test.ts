@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { appIdentity } from '../src/catalog.ts';
-import { loadPreviews, normalizeContent } from '../src/previews.ts';
+import { loadPreviews, normalizeContent, normalizeNetflix } from '../src/previews.ts';
 
 test('the desktop preview has a YouTube shelf that deep links each video', async () => {
   const items = await loadPreviews(appIdentity('youtube.leanback.v4', 'YouTube'));
@@ -13,6 +13,11 @@ test('the desktop preview has a YouTube shelf that deep links each video', async
 
 test('apps without a source have no shelf', async () => {
   assert.deepEqual(await loadPreviews(appIdentity('netflix', 'Netflix')), []);
+  // Only Netflix, YouTube, and LG Channels have verified shelves.
+  assert.deepEqual(
+    await loadPreviews(appIdentity('com.example.youtube.fan', 'A YouTube fan app')),
+    [],
+  );
 });
 
 test('webOS published content becomes shelf items that open their target app', () => {
@@ -67,4 +72,32 @@ test('webOS published content becomes shelf items that open their target app', (
     ],
   );
   assert.deepEqual(normalizeContent({ contents: [] }, 'x'), []);
+});
+
+test('Netflix discovery tiles keep their order, drop repeats, and open by deep link', () => {
+  const tile = (title: string, movie: string | null, url = 'https://occ-0.nflxso.net/a.jpg') => ({
+    title,
+    deepLink: movie ? `expireAt=1&listContext=continueWatching&m=${movie}&source_type=27` : 'x=1',
+    images: { tile: { url, width: 390, height: 219 } },
+  });
+  const items = normalizeNetflix([
+    { title: 'Continue Watching', tiles: [tile('First', '1'), tile('No id', null)] },
+    {
+      title: 'Picks',
+      tiles: [tile('First again', '1'), tile('Second', '2'), tile('No art', '3', ''), 'bad'],
+    },
+    null,
+  ]);
+  assert.deepEqual(
+    items.map((item) => [item.id, item.title, item.subtitle, item.appId]),
+    [
+      ['1', 'First', 'Continue Watching', 'netflix'],
+      ['2', 'Second', 'Picks', 'netflix'],
+    ],
+  );
+  assert.equal(
+    items[0].launch.params?.contentTarget,
+    'expireAt=1&listContext=continueWatching&m=1&source_type=27',
+  );
+  assert.deepEqual(normalizeNetflix(undefined), []);
 });

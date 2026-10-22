@@ -1,4 +1,4 @@
-import { isTV, readAppContent } from './bridge';
+import { isTV, readAppContent, readNetflixDiscovery } from './bridge';
 import { validAppId } from './catalog';
 import type { TVApp } from './types';
 
@@ -27,7 +27,11 @@ const youtubeVideo = (id: string, title: string, channel: string): PreviewItem =
 
 // Sample shelf for the desktop preview until a live source is chosen.
 const sampleYoutube: PreviewItem[] = [
-  youtubeVideo('kJQP7kiw5Fk', 'Luis Fonsi - Despacito ft. Daddy Yankee', 'Luis Fonsi'),
+  youtubeVideo(
+    'kJQP7kiw5Fk',
+    'Luis Fonsi - Despacito ft. Daddy Yankee (Official Music Video) — the most viewed video on YouTube for years',
+    'Luis Fonsi',
+  ),
   youtubeVideo('JGwWNGJdvx8', 'Ed Sheeran - Shape of You (Official Music Video)', 'Ed Sheeran'),
   youtubeVideo('OPf0YbXqDm0', 'Mark Ronson - Uptown Funk ft. Bruno Mars', 'Mark Ronson'),
   youtubeVideo('fJ9rUzIMcZQ', 'Queen – Bohemian Rhapsody (Official Video Remastered)', 'Queen'),
@@ -76,8 +80,45 @@ export function normalizeContent(raw: unknown, appId: string): PreviewItem[] {
     .slice(0, 20);
 }
 
-// Apps without published content, or without deep links, get no shelf.
+// Netflix discovery groups (Continue Watching, then today's picks). A tile's deepLink, passed
+// to Netflix as contentTarget, resumes or opens that title; links expire after about a day.
+export function normalizeNetflix(raw: unknown): PreviewItem[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  return raw
+    .slice(0, 10)
+    .flatMap((group) => {
+      if (!record(group) || !Array.isArray(group.tiles)) return [];
+      const label = text(group.title, 120);
+      return group.tiles.slice(0, 20).flatMap((tile: unknown): PreviewItem[] => {
+        if (!record(tile)) return [];
+        const title = text(tile.title, 200);
+        const deepLink = text(tile.deepLink, 4096);
+        const movie = /(?:^|&)m=(\d+)/.exec(deepLink)?.[1];
+        const image = record(tile.images) ? imageUrl(tile.images.tile) : '';
+        if (!title || !movie || !image || seen.has(movie)) return [];
+        seen.add(movie);
+        return [
+          {
+            id: movie,
+            title,
+            subtitle: label,
+            image,
+            appId: 'netflix',
+            launch: { params: { contentTarget: deepLink } },
+          },
+        ];
+      });
+    })
+    .slice(0, 20);
+}
+
+// Apps whose highlights and deep links are verified on webOS 10; others get no shelf.
+export const PREVIEW_APP_IDS = ['netflix', 'youtube.leanback.v4', 'com.webos.app.lgchannels'];
+
 export async function loadPreviews(app: TVApp): Promise<PreviewItem[]> {
+  if (!PREVIEW_APP_IDS.includes(app.id)) return [];
+  if (isTV() && app.id === 'netflix') return normalizeNetflix(await readNetflixDiscovery());
   if (isTV()) return normalizeContent(await readAppContent(app.id), app.id);
   return app.brand === 'youtube' ? sampleYoutube : [];
 }
